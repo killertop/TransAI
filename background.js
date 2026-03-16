@@ -542,7 +542,7 @@ async function handleSetGlobalTranslationEnabled(message) {
 }
 
 async function handleTestApiConnection() {
-  const apiKey = await getApiKeyOrThrow();
+  const apiKey = await getApiKey();
   const apiEndpoint = await getApiEndpointOrDefault();
   const testResult = await validateBuiltInApiConnection(apiKey, apiEndpoint);
 
@@ -1329,21 +1329,26 @@ function getModelCandidates() {
 function getBuiltInTranslationCandidates(apiKey, apiEndpoint = API_ENDPOINT) {
   const primaryEndpoint = normalizeApiEndpoint(apiEndpoint) || API_ENDPOINT;
   const primaryKey = sanitizeApiKey(apiKey);
-  const candidates = MODEL_CANDIDATES.map((modelName) => ({
-    providerId: "longcat",
-    providerKey: "longcat",
-    rateLimitKey: `longcat:${modelName}`,
-    modelName,
-    endpoint: primaryEndpoint,
-    apiKey: primaryKey,
-    temperature: 0.1,
-    maxOutputTokens: SAFE_MAX_OUTPUT_TOKENS,
-    requestTimeoutMs: REQUEST_TIMEOUT_MS,
-    healthCheckTimeoutMs: modelName === PRIMARY_MODEL_NAME ? 8000 : 12000,
-    retryAttempts: 3,
-    maxBatchItems: Number.MAX_SAFE_INTEGER,
-    maxBatchChars: Number.MAX_SAFE_INTEGER
-  }));
+  const candidates = [];
+  if (primaryKey && primaryEndpoint) {
+    candidates.push(
+      ...MODEL_CANDIDATES.map((modelName) => ({
+        providerId: "longcat",
+        providerKey: "longcat",
+        rateLimitKey: `longcat:${modelName}`,
+        modelName,
+        endpoint: primaryEndpoint,
+        apiKey: primaryKey,
+        temperature: 0.1,
+        maxOutputTokens: SAFE_MAX_OUTPUT_TOKENS,
+        requestTimeoutMs: REQUEST_TIMEOUT_MS,
+        healthCheckTimeoutMs: modelName === PRIMARY_MODEL_NAME ? 8000 : 12000,
+        retryAttempts: 3,
+        maxBatchItems: Number.MAX_SAFE_INTEGER,
+        maxBatchChars: Number.MAX_SAFE_INTEGER
+      }))
+    );
+  }
 
   const instantEndpoint = getInstantBackupEndpointOrDefault();
   const instantApiKey = getInstantBackupApiKey();
@@ -1514,6 +1519,16 @@ async function validateBuiltInModelConnection(candidate) {
 
 async function validateBuiltInApiConnection(apiKey, apiEndpoint = API_ENDPOINT) {
   const candidates = getBuiltInTranslationCandidates(apiKey, apiEndpoint);
+  if (!candidates.length) {
+    return {
+      ok: false,
+      statusCode: 0,
+      error: "未配置任何可用的内置 LLM 模型",
+      availableModels: 0,
+      totalModels: 0,
+      results: []
+    };
+  }
   const results = await Promise.all(
     candidates.map((candidate) => validateBuiltInModelConnection(candidate))
   );
@@ -2749,9 +2764,12 @@ async function requestLongCatTranslationCore(sourceEntries, languageHint = "", o
   const languageProfile = detectLanguageProfile(normalizedEntries, languageHint);
   const systemPrompt = buildSystemPrompt(languageProfile);
   const userPrompt = buildUserPrompt(normalizedEntries, languageProfile);
-  const apiKey = await getApiKeyOrThrow();
+  const apiKey = await getApiKey();
   const apiEndpoint = await getApiEndpointOrDefault();
   const translationCandidates = getBuiltInTranslationCandidates(apiKey, apiEndpoint);
+  if (!translationCandidates.length) {
+    throw new Error("未配置任何可用的内置翻译服务");
+  }
 
   let maxTokens = estimateBestEffortMaxTokens(systemPrompt, userPrompt, normalizedEntries);
   let lastError = null;

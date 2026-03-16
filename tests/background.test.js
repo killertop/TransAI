@@ -225,8 +225,10 @@ async function main() {
   const builtInCandidates = toPlain(getBuiltInTranslationCandidates(builtInApiKey, builtInEndpoint));
   const instantCandidate = builtInCandidates.find((item) => item.modelName === 'instant');
   const flashChatCandidate = builtInCandidates.find((item) => item.modelName === 'LongCat-Flash-Chat');
+  const instantOnlyCandidates = toPlain(getBuiltInTranslationCandidates('', builtInEndpoint));
   assert.equal(Boolean(instantCandidate), true);
   assert.equal(Boolean(flashChatCandidate), true);
+  assert.deepEqual(instantOnlyCandidates.map((item) => item.modelName), ['instant']);
   assert.equal(instantCandidate.maxBatchItems, 24);
   assert.equal(instantCandidate.maxBatchChars, 2400);
   assert.equal(flashChatCandidate.healthCheckTimeoutMs, 12000);
@@ -290,6 +292,23 @@ async function main() {
   assert.equal(oneAvailableResult.message, '1 个内置 LLM 模型可用');
   assert.equal(oneAvailableResult.availableModels, 1);
   assert.deepEqual(requestedModelsB.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite', 'instant']);
+
+  const requestedModelsInstantOnly = [];
+  context.fetch = async (_url, options) => {
+    const payload = JSON.parse(String(options.body || '{}'));
+    requestedModelsInstantOnly.push(payload.model);
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return '';
+      }
+    };
+  };
+  const instantOnlyHealthCheck = await validateBuiltInApiConnection('', builtInEndpoint);
+  assert.equal(instantOnlyHealthCheck.ok, true);
+  assert.equal(instantOnlyHealthCheck.message, '1 个内置 LLM 模型可用');
+  assert.deepEqual(requestedModelsInstantOnly, ['instant']);
 
   const requestedModelsC = [];
   context.fetch = async (_url, options) => {
