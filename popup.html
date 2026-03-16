@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM 翻译</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="header">
+        <div class="brand">
+          <img class="brand-icon" src="icons/icon-32.png" alt="" />
+          <h1>LLM 翻译</h1>
+        </div>
+        <span class="version-badge">v1.4</span>
+      </header>
+
+      <section class="hero-card">
+        <p class="hero-title">自动翻译总开关</p>
+        <p class="hero-desc">
+          开启后，默认把检测为非简体中文的网页翻译成简体中文；关闭后不翻译。
+        </p>
+      </section>
+
+      <label class="toggle-row">
+        <span class="toggle-copy">
+          <span class="toggle-title">启用自动翻译</span>
+          <span class="toggle-desc">
+            简体中文页面会自动跳过，其他语言页面会按需翻译为简体中文
+          </span>
+        </span>
+        <input id="globalToggle" type="checkbox" disabled />
+      </label>
+
+      <div class="actions">
+        <button id="testApiBtn" class="action-btn secondary" type="button">测试接口</button>
+      </div>
+
+      <p id="status" class="status" aria-live="polite"></p>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
