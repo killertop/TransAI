@@ -195,6 +195,73 @@ const MINORITY_FOREIGN_SNIPPET_MAX_WORDS = 6;
 const MINORITY_FOREIGN_CONTEXT_ANCESTOR_DEPTH = 3;
 const MINORITY_FOREIGN_CONTEXT_SAMPLE_CHARS = 560;
 const MINORITY_FOREIGN_CONTEXT_MIN_CHINESE = 18;
+const FOREIGN_NAME_CONNECTOR_WORDS = new Set([
+  "al",
+  "ap",
+  "bin",
+  "binti",
+  "da",
+  "de",
+  "del",
+  "der",
+  "di",
+  "dos",
+  "du",
+  "el",
+  "ibn",
+  "la",
+  "le",
+  "van",
+  "von"
+]);
+const GENERIC_ENGLISH_UI_WORDS = new Set([
+  "access",
+  "account",
+  "add",
+  "admin",
+  "apply",
+  "approval",
+  "button",
+  "cancel",
+  "close",
+  "confirm",
+  "continue",
+  "create",
+  "dashboard",
+  "delete",
+  "details",
+  "docs",
+  "download",
+  "edit",
+  "file",
+  "help",
+  "invite",
+  "login",
+  "logout",
+  "menu",
+  "message",
+  "new",
+  "next",
+  "open",
+  "permission",
+  "previous",
+  "profile",
+  "read",
+  "request",
+  "review",
+  "save",
+  "search",
+  "settings",
+  "share",
+  "sign",
+  "status",
+  "submit",
+  "sync",
+  "team",
+  "upload",
+  "view",
+  "workspace"
+]);
 const ENGLISH_HINT_WORDS = new Set([
   "the",
   "and",
@@ -2827,6 +2894,75 @@ function isChineseDominantContextText(text) {
   );
 }
 
+function extractLatinWords(text) {
+  return String(text || "").match(/[A-Za-z\u00C0-\u024F]+(?:['’-][A-Za-z\u00C0-\u024F]+)*/g) || [];
+}
+
+function isUppercaseLatinWord(word) {
+  return /^[A-Z\u00C0-\u00DE]{2,}[0-9]*$/.test(String(word || ""));
+}
+
+function isCapitalizedLatinWord(word) {
+  return /^[A-Z\u00C0-\u00DE][a-z\u00DF-\u024F]+(?:['’-][A-Z\u00C0-\u00DE]?[a-z\u00DF-\u024F]+)*$/.test(
+    String(word || "")
+  );
+}
+
+function isMixedCaseBrandWord(word) {
+  const value = String(word || "");
+  if (!/[A-Za-z]/.test(value)) {
+    return false;
+  }
+  const hasUpper = /[A-Z]/.test(value);
+  const hasLower = /[a-z]/.test(value);
+  return hasUpper && hasLower && !isCapitalizedLatinWord(value) && /[A-Z].*[A-Z]|[a-z].*[A-Z]/.test(value);
+}
+
+function isForeignConnectorWord(word) {
+  return FOREIGN_NAME_CONNECTOR_WORDS.has(String(word || "").toLowerCase());
+}
+
+function hasGenericEnglishUiWord(words) {
+  return words.some((word) => GENERIC_ENGLISH_UI_WORDS.has(String(word || "").toLowerCase()));
+}
+
+function isLikelyForeignProperNounOrBrand(text) {
+  const words = extractLatinWords(text);
+  if (!words.length || words.length > MINORITY_FOREIGN_SNIPPET_MAX_WORDS) {
+    return false;
+  }
+
+  if (hasGenericEnglishUiWord(words)) {
+    return false;
+  }
+
+  const properWordCount = words.filter(
+    (word) => isUppercaseLatinWord(word) || isCapitalizedLatinWord(word) || isMixedCaseBrandWord(word)
+  ).length;
+
+  if (words.length === 1) {
+    const [word] = words;
+    return (
+      String(word).length >= 3 &&
+      (isUppercaseLatinWord(word) || isCapitalizedLatinWord(word) || isMixedCaseBrandWord(word))
+    );
+  }
+
+  for (const word of words) {
+    if (
+      isUppercaseLatinWord(word) ||
+      isCapitalizedLatinWord(word) ||
+      isMixedCaseBrandWord(word) ||
+      isForeignConnectorWord(word)
+    ) {
+      continue;
+    }
+    return false;
+  }
+
+  return properWordCount >= 2;
+}
+
 function isLikelyMinorityForeignSnippet(text) {
   const normalized = String(text || "")
     .replace(/\s+/g, " ")
@@ -2851,12 +2987,12 @@ function isLikelyMinorityForeignSnippet(text) {
     return false;
   }
 
-  const words = normalized.match(/[A-Za-z\u00C0-\u024F]+(?:['’-][A-Za-z\u00C0-\u024F]+)*/g) || [];
+  const words = extractLatinWords(normalized);
   if (!words.length || words.length > MINORITY_FOREIGN_SNIPPET_MAX_WORDS) {
     return false;
   }
 
-  return true;
+  return isLikelyForeignProperNounOrBrand(normalized);
 }
 
 function shouldSkipMinorityForeignSnippet(text, element) {
