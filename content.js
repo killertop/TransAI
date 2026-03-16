@@ -192,6 +192,8 @@ const FAILED_CONTEXT_ANCESTOR_DEPTH = 3;
 const FAILED_CONTEXT_CLASS_TOKENS = 2;
 const MINORITY_FOREIGN_SNIPPET_MAX_CHARS = 64;
 const MINORITY_FOREIGN_SNIPPET_MAX_WORDS = 6;
+const MINORITY_FOREIGN_UI_SNIPPET_MAX_CHARS = 28;
+const MINORITY_FOREIGN_UI_SNIPPET_MAX_WORDS = 3;
 const MINORITY_FOREIGN_CONTEXT_ANCESTOR_DEPTH = 3;
 const MINORITY_FOREIGN_CONTEXT_SAMPLE_CHARS = 560;
 const MINORITY_FOREIGN_CONTEXT_MIN_CHINESE = 18;
@@ -2963,6 +2965,30 @@ function isLikelyForeignProperNounOrBrand(text) {
   return properWordCount >= 2;
 }
 
+function isLikelyShortForeignUiSnippet(text) {
+  const normalized = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (normalized.length > MINORITY_FOREIGN_UI_SNIPPET_MAX_CHARS) {
+    return false;
+  }
+
+  if (containsChineseChar(normalized) || /[.!?。！？:：;]/.test(normalized)) {
+    return false;
+  }
+
+  const words = extractLatinWords(normalized);
+  if (!words.length || words.length > MINORITY_FOREIGN_UI_SNIPPET_MAX_WORDS) {
+    return false;
+  }
+
+  return !isLikelyForeignProperNounOrBrand(normalized);
+}
+
 function isLikelyMinorityForeignSnippet(text) {
   const normalized = String(text || "")
     .replace(/\s+/g, " ")
@@ -2996,7 +3022,9 @@ function isLikelyMinorityForeignSnippet(text) {
 }
 
 function shouldSkipMinorityForeignSnippet(text, element) {
-  if (!isLikelyMinorityForeignSnippet(text)) {
+  const properNounLike = isLikelyMinorityForeignSnippet(text);
+  const shortUiLike = isLikelyShortForeignUiSnippet(text);
+  if (!properNounLike && !shortUiLike) {
     return false;
   }
 
@@ -3007,7 +3035,10 @@ function shouldSkipMinorityForeignSnippet(text, element) {
     depth += 1, cursor = cursor.parentElement
   ) {
     const sample = getElementTextSample(cursor, MINORITY_FOREIGN_CONTEXT_SAMPLE_CHARS);
-    if (isChineseDominantContextText(sample)) {
+    if (properNounLike && isChineseDominantContextText(sample)) {
+      return true;
+    }
+    if (shortUiLike && isChineseDominantContextText(sample)) {
       return true;
     }
   }
@@ -3016,7 +3047,10 @@ function shouldSkipMinorityForeignSnippet(text, element) {
     document.body || document.documentElement,
     MINORITY_FOREIGN_CONTEXT_SAMPLE_CHARS
   );
-  return isChineseDominantContextText(pageSample);
+  if (properNounLike && isChineseDominantContextText(pageSample)) {
+    return true;
+  }
+  return shortUiLike && isChineseDominantContextText(pageSample);
 }
 
 function detectChineseScriptMode(text) {

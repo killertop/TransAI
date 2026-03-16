@@ -342,7 +342,18 @@ function main() {
     top: 34
   });
   readAccessSnippet.textContent = "Read Access";
-  assert.equal(shouldSkipMinorityForeignSnippet("Read Access", readAccessSnippet), false);
+  assert.equal(shouldSkipMinorityForeignSnippet("Read Access", readAccessSnippet), true);
+
+  const chineseMenuPage = new MockElement({ tagName: "section", top: 36 });
+  chineseMenuPage.textContent =
+    "当前页面主要是中文内容，只有少量英文按钮，例如 Open menu 和 View details";
+  const chineseMenuSnippet = new MockElement({
+    tagName: "span",
+    parentElement: chineseMenuPage,
+    top: 40
+  });
+  chineseMenuSnippet.textContent = "Open menu";
+  assert.equal(shouldSkipMinorityForeignSnippet("Open menu", chineseMenuSnippet), true);
 
   const searchInput = new MockElement({ tagName: "input", top: 40, left: 20 });
   searchInput.setAttribute("type", "text");
