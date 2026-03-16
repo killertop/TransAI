@@ -218,7 +218,7 @@ function loadContentForTest() {
   const source = fs.readFileSync(filePath, "utf8");
   const exposeSource = source.replace(
     /\}\)\(\);\s*$/,
-    `\n;globalThis.__testExports = {\n  shouldIgnoreElement,\n  isAcceptableTranslatedResult,\n  getTranslationCacheKey,\n  rememberFailedTranslationAttempt,\n  isSourceTextRetrySuppressed,\n  getFailedPhraseState,\n  clearFailedPhraseState,\n  detectChineseScriptMode,\n  deduplicateRoots,\n  isTranslatableHintElement,\n  getTranslatableElementAttributeNames,\n  getOrCreateElementAttributeTarget,\n  getElementAttributeTargetText,\n  applyTranslationToElementAttribute,\n  restoreOriginalAttributes\n};\n})();`
+    `\n;globalThis.__testExports = {\n  shouldIgnoreElement,\n  isAcceptableTranslatedResult,\n  getTranslationCacheKey,\n  rememberFailedTranslationAttempt,\n  isSourceTextRetrySuppressed,\n  getFailedPhraseState,\n  clearFailedPhraseState,\n  detectChineseScriptMode,\n  deduplicateRoots,\n  isTranslatableHintElement,\n  getTranslatableElementAttributeNames,\n  getOrCreateElementAttributeTarget,\n  getElementAttributeTargetText,\n  applyTranslationToElementAttribute,\n  restoreOriginalAttributes,\n  isLikelyMinorityForeignSnippet,\n  shouldSkipMinorityForeignSnippet\n};\n})();`
   );
   const { context, MockElement } = createBaseContext();
   vm.createContext(context);
@@ -243,7 +243,9 @@ function main() {
     getOrCreateElementAttributeTarget,
     getElementAttributeTargetText,
     applyTranslationToElementAttribute,
-    restoreOriginalAttributes
+    restoreOriginalAttributes,
+    isLikelyMinorityForeignSnippet,
+    shouldSkipMinorityForeignSnippet
   } = context.__testExports;
 
   const editableNode = new MockElement();
@@ -291,6 +293,12 @@ function main() {
 
   assert.equal(detectChineseScriptMode("這裡會顯示網頁設定與閱讀內容"), "traditional");
   assert.equal(detectChineseScriptMode("这里会显示网页设置与阅读内容"), "simplified");
+  assert.equal(isLikelyMinorityForeignSnippet("Mohammad Mahfuzul Huq"), true);
+  assert.equal(isLikelyMinorityForeignSnippet("Open the dashboard now"), true);
+  assert.equal(
+    isLikelyMinorityForeignSnippet("This is a complete English sentence with punctuation."),
+    false
+  );
 
   const rootA = new MockElement({ tagName: "section", top: 10 });
   rootA._matches = () => false;
@@ -305,6 +313,20 @@ function main() {
   assert.equal(deduped.includes(rootA), true);
   assert.equal(deduped.includes(rootC), true);
   assert.equal(deduped.includes(rootB), false);
+
+  const chinesePage = new MockElement({ tagName: "section", top: 12 });
+  chinesePage.textContent =
+    "没有权限访问 当前登录账号为 TRANSSION 的刘伟，你可以向 Mohammad Mahfuzul Huq 申请权限";
+  const englishName = new MockElement({ tagName: "span", parentElement: chinesePage, top: 18 });
+  englishName.textContent = "Mohammad Mahfuzul Huq";
+  assert.equal(shouldSkipMinorityForeignSnippet("Mohammad Mahfuzul Huq", englishName), true);
+
+  const englishPage = new MockElement({ tagName: "section", top: 24 });
+  englishPage.textContent =
+    "Open menu and review workspace settings before continuing with account access";
+  const englishSnippet = new MockElement({ tagName: "span", parentElement: englishPage, top: 28 });
+  englishSnippet.textContent = "Open menu";
+  assert.equal(shouldSkipMinorityForeignSnippet("Open menu", englishSnippet), false);
 
   const searchInput = new MockElement({ tagName: "input", top: 40, left: 20 });
   searchInput.setAttribute("type", "text");

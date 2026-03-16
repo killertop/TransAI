@@ -190,6 +190,11 @@ const FAILED_PHRASE_STALE_SWEEP_INTERVAL = 24;
 const LONG_TEXT_MAX_CONCURRENT = 2;
 const FAILED_CONTEXT_ANCESTOR_DEPTH = 3;
 const FAILED_CONTEXT_CLASS_TOKENS = 2;
+const MINORITY_FOREIGN_SNIPPET_MAX_CHARS = 64;
+const MINORITY_FOREIGN_SNIPPET_MAX_WORDS = 6;
+const MINORITY_FOREIGN_CONTEXT_ANCESTOR_DEPTH = 3;
+const MINORITY_FOREIGN_CONTEXT_SAMPLE_CHARS = 560;
+const MINORITY_FOREIGN_CONTEXT_MIN_CHINESE = 18;
 const ENGLISH_HINT_WORDS = new Set([
   "the",
   "and",
@@ -2424,6 +2429,10 @@ function isEligibleTextNode(node, allowIdlePrefetch = false) {
     return false;
   }
 
+  if (shouldSkipMinorityForeignSnippet(coreText, parent)) {
+    return false;
+  }
+
   if (!/[A-Za-z\u00C0-\u024F\u0400-\u04FF\u3040-\u30FF\uAC00-\uD7AF]/.test(coreText)) {
     return false;
   }
@@ -2481,6 +2490,10 @@ function isEligibleElementAttributeTarget(target, allowIdlePrefetch = false) {
   }
 
   if (isMostlyChinese(coreText)) {
+    return false;
+  }
+
+  if (shouldSkipMinorityForeignSnippet(coreText, element)) {
     return false;
   }
 
@@ -2785,6 +2798,89 @@ function shouldSkipChineseText(text) {
   );
   const chineseRatio = chineseCount / Math.max(1, text.length);
   return chineseRatio > 0.4 && foreignCount < chineseCount * 0.22;
+}
+
+function isChineseDominantContextText(text) {
+  if (!text) {
+    return false;
+  }
+
+  if (shouldSkipChineseText(text)) {
+    return true;
+  }
+
+  const chineseCount = countMatches(text, /[\u4e00-\u9fff]/g);
+  if (chineseCount < MINORITY_FOREIGN_CONTEXT_MIN_CHINESE) {
+    return false;
+  }
+
+  const foreignCount = countMatches(
+    text,
+    /[A-Za-z\u00C0-\u024F\u0400-\u04FF\u3040-\u30FF\uAC00-\uD7AF]/g
+  );
+  const foreignWords =
+    String(text || "").match(/[A-Za-z\u00C0-\u024F]+(?:['’-][A-Za-z\u00C0-\u024F]+)*/g) || [];
+  const chineseRatio = chineseCount / Math.max(1, text.length);
+  return (
+    (chineseRatio >= 0.28 && foreignCount < chineseCount * 0.45) ||
+    chineseCount >= Math.max(MINORITY_FOREIGN_CONTEXT_MIN_CHINESE, foreignWords.length * 3)
+  );
+}
+
+function isLikelyMinorityForeignSnippet(text) {
+  const normalized = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (normalized.length > MINORITY_FOREIGN_SNIPPET_MAX_CHARS) {
+    return false;
+  }
+
+  if (containsChineseChar(normalized)) {
+    return false;
+  }
+
+  if (!/[A-Za-z\u00C0-\u024F]/.test(normalized)) {
+    return false;
+  }
+
+  if (/[.!?。！？]/.test(normalized)) {
+    return false;
+  }
+
+  const words = normalized.match(/[A-Za-z\u00C0-\u024F]+(?:['’-][A-Za-z\u00C0-\u024F]+)*/g) || [];
+  if (!words.length || words.length > MINORITY_FOREIGN_SNIPPET_MAX_WORDS) {
+    return false;
+  }
+
+  return true;
+}
+
+function shouldSkipMinorityForeignSnippet(text, element) {
+  if (!isLikelyMinorityForeignSnippet(text)) {
+    return false;
+  }
+
+  let cursor = element;
+  for (
+    let depth = 0;
+    cursor && depth < MINORITY_FOREIGN_CONTEXT_ANCESTOR_DEPTH;
+    depth += 1, cursor = cursor.parentElement
+  ) {
+    const sample = getElementTextSample(cursor, MINORITY_FOREIGN_CONTEXT_SAMPLE_CHARS);
+    if (isChineseDominantContextText(sample)) {
+      return true;
+    }
+  }
+
+  const pageSample = getElementTextSample(
+    document.body || document.documentElement,
+    MINORITY_FOREIGN_CONTEXT_SAMPLE_CHARS
+  );
+  return isChineseDominantContextText(pageSample);
 }
 
 function detectChineseScriptMode(text) {
