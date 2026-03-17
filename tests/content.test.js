@@ -218,7 +218,7 @@ function loadContentForTest() {
   const source = fs.readFileSync(filePath, "utf8");
   const exposeSource = source.replace(
     /\}\)\(\);\s*$/,
-    `\n;globalThis.__testExports = {\n  shouldIgnoreElement,\n  isAcceptableTranslatedResult,\n  getTranslationCacheKey,\n  rememberFailedTranslationAttempt,\n  isSourceTextRetrySuppressed,\n  getFailedPhraseState,\n  clearFailedPhraseState,\n  detectChineseScriptMode,\n  deduplicateRoots,\n  isTranslatableHintElement,\n  getTranslatableElementAttributeNames,\n  getOrCreateElementAttributeTarget,\n  getElementAttributeTargetText,\n  applyTranslationToElementAttribute,\n  restoreOriginalAttributes,\n  isLikelyMinorityForeignSnippet,\n  shouldSkipMinorityForeignSnippet,\n  isLikelyForeignProperNounOrBrand\n};\n})();`
+    `\n;globalThis.__testExports = {\n  shouldIgnoreElement,\n  isAcceptableTranslatedResult,\n  getTranslationCacheKey,\n  rememberFailedTranslationAttempt,\n  isSourceTextRetrySuppressed,\n  getFailedPhraseState,\n  clearFailedPhraseState,\n  detectChineseScriptMode,\n  deduplicateRoots,\n  isTranslatableHintElement,\n  getTranslatableElementAttributeNames,\n  getOrCreateElementAttributeTarget,\n  getElementAttributeTargetText,\n  applyTranslationToElementAttribute,\n  restoreOriginalAttributes,\n  isLikelyMinorityForeignSnippet,\n  shouldSkipMinorityForeignSnippet,\n  isLikelyForeignProperNounOrBrand,\n  isRateLimitError,\n  resolveRateLimitRetryDelayMs\n};\n})();`
   );
   const { context, MockElement } = createBaseContext();
   vm.createContext(context);
@@ -246,7 +246,9 @@ function main() {
     restoreOriginalAttributes,
     isLikelyMinorityForeignSnippet,
     shouldSkipMinorityForeignSnippet,
-    isLikelyForeignProperNounOrBrand
+    isLikelyForeignProperNounOrBrand,
+    isRateLimitError,
+    resolveRateLimitRetryDelayMs
   } = context.__testExports;
 
   const editableNode = new MockElement();
@@ -298,6 +300,12 @@ function main() {
   assert.equal(isLikelyForeignProperNounOrBrand("TRANSSION"), true);
   assert.equal(isLikelyForeignProperNounOrBrand("GitHub Copilot"), true);
   assert.equal(isLikelyForeignProperNounOrBrand("Read Access"), false);
+  assert.equal(
+    isRateLimitError('LongCat 接口错误 (429): {"error":{"type":"rate_limit_error","code":"too_many_requests"}}'),
+    true
+  );
+  assert.equal(resolveRateLimitRetryDelayMs({ retryAfterMs: 3200 }), 3200);
+  assert.equal(resolveRateLimitRetryDelayMs("LongCat 接口错误 (429): retryAfterMs=9000"), 9000);
   assert.equal(isLikelyMinorityForeignSnippet("Mohammad Mahfuzul Huq"), true);
   assert.equal(isLikelyMinorityForeignSnippet("Open the dashboard now"), false);
   assert.equal(

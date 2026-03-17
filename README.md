@@ -45,6 +45,7 @@ The token field always stays masked for safer editing inside the popup.
 - 简体中文页面会自动跳过
 - 默认不会全局开启，只有当前域名被启用后才会自动翻译
 - 关闭当前域名开关后，插件会尽量恢复页面原文
+- 遇到接口 `429` 限流时会自动退避并稍后重试，尽量避免页面持续报错
 - 为避免表单异常，不会翻译 `input/textarea/contenteditable` 的实际输入内容
 
 ## 项目结构

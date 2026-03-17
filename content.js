@@ -183,6 +183,8 @@ const BODY_BLOCK_OBSERVE_INTERVAL_MS = 900;
 const INVALID_TRANSLATION_RETRY_MIN_MS = 1200;
 const INVALID_TRANSLATION_RETRY_MAX_MS = 20000;
 const INVALID_TRANSLATION_RETRY_FACTOR = 1.9;
+const RATE_LIMIT_RETRY_MIN_MS = 2500;
+const RATE_LIMIT_RETRY_MAX_MS = 45000;
 const INVALID_TRANSLATION_MAX_REJECTS = 4;
 const FAILED_PHRASE_CACHE_LIMIT = 420;
 const FAILED_PHRASE_CACHE_TTL_MS = 12 * 60 * 1000;
@@ -1667,6 +1669,33 @@ function isCancellationError(errorMessage) {
     text.includes("aborted") ||
     text.includes("abort")
   );
+}
+
+function isRateLimitError(errorLike) {
+  const text = extractErrorText(errorLike).toLowerCase();
+  return (
+    text.includes("(429)") ||
+    text.includes(" 429") ||
+    text.includes("429:") ||
+    text.includes("too_many_requests") ||
+    text.includes("rate_limit_error") ||
+    text.includes("rate limit")
+  );
+}
+
+function resolveRateLimitRetryDelayMs(errorLike, fallbackMs = RATE_LIMIT_RETRY_MIN_MS) {
+  const retryAfterMs = Math.max(0, Number(errorLike?.retryAfterMs || 0));
+  if (retryAfterMs > 0) {
+    return clampNumber(retryAfterMs, RATE_LIMIT_RETRY_MIN_MS, RATE_LIMIT_RETRY_MAX_MS);
+  }
+
+  const text = extractErrorText(errorLike);
+  const directMatch = text.match(/retryAfterMs["']?\s*[:=]\s*(\d{2,8})/i);
+  if (directMatch) {
+    return clampNumber(Number(directMatch[1] || 0), RATE_LIMIT_RETRY_MIN_MS, RATE_LIMIT_RETRY_MAX_MS);
+  }
+
+  return clampNumber(fallbackMs, RATE_LIMIT_RETRY_MIN_MS, RATE_LIMIT_RETRY_MAX_MS);
 }
 
 function isExtensionContextInvalidatedError(errorMessage) {
@@ -3295,6 +3324,12 @@ function processQueue(immediate = false) {
         if (isCancellationError(errorText)) {
           return;
         }
+        if (isRateLimitError(error)) {
+          lowerAdaptiveBatchLimits();
+          scheduleRetryScan(resolveRateLimitRetryDelayMs(error));
+          console.info("[LongCat Translate] 批量翻译触发限流，已自动退避。", errorText || error);
+          return;
+        }
         lowerAdaptiveBatchLimits();
         console.warn("[LongCat Translate] 翻译队列异常", errorText || error);
       })
@@ -3326,6 +3361,12 @@ function processQueue(immediate = false) {
           return;
         }
         if (isCancellationError(errorText)) {
+          return;
+        }
+        if (isRateLimitError(error)) {
+          lowerAdaptiveBatchLimits();
+          scheduleRetryScan(resolveRateLimitRetryDelayMs(error));
+          console.info("[LongCat Translate] 长文本翻译触发限流，已自动退避。", errorText || error);
           return;
         }
         lowerAdaptiveBatchLimits();
@@ -3381,6 +3422,16 @@ async function runQueueWorker() {
       }
       if (isCancellationError(responseErrorText)) {
         await sleep(18);
+        return;
+      }
+      if (Number(response?.statusCode || 0) === 429 || isRateLimitError(response)) {
+        lowerAdaptiveBatchLimits();
+        scheduleRetryScan(resolveRateLimitRetryDelayMs(response));
+        console.info(
+          "[LongCat Translate] 触发接口限流，已自动退避后重试。",
+          responseErrorText
+        );
+        await sleep(24);
         return;
       }
       lowerAdaptiveBatchLimits();
@@ -4699,7 +4750,10 @@ async function translateLongText(
   });
 
   if (!response?.ok) {
-    throw new Error(response?.error || "长文本翻译失败");
+    const error = new Error(response?.error || "长文本翻译失败");
+    error.statusCode = Number(response?.statusCode || 0);
+    error.retryAfterMs = Math.max(0, Number(response?.retryAfterMs || 0));
+    throw error;
   }
 
   const translations = Array.isArray(response.translations)

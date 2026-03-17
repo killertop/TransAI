@@ -551,7 +551,7 @@ if (chrome.runtime?.onMessage?.addListener) {
     if (message.type === "translateBatch") {
       handleTranslateBatch(message, sender)
         .then(sendResponse)
-        .catch((error) => sendResponse({ ok: false, error: error.message }));
+        .catch((error) => sendResponse(buildRuntimeErrorResponse(error)));
       return true;
     }
 
@@ -945,6 +945,9 @@ async function handleTranslateBatch(message, sender) {
     requestEntries.push(missingEntry);
     if (requestKey) {
       const deferred = createDeferred();
+      deferred.promise.catch(() => {
+        // 避免同文本合并请求在无人等待时触发未处理的 Promise rejection。
+      });
       requestDeferredByKey.set(requestKey, deferred);
       inFlightTranslationRequests.set(requestKey, deferred.promise);
     }
@@ -1198,6 +1201,16 @@ function createDeferred() {
     promise,
     resolve,
     reject
+  };
+}
+
+function buildRuntimeErrorResponse(error) {
+  return {
+    ok: false,
+    error: String(error?.message || "请求失败"),
+    statusCode: Number(error?.statusCode || 0),
+    retryAfterMs: Math.max(0, Number(error?.retryAfterMs || 0)),
+    canceled: Boolean(error?.canceled || false)
   };
 }
 
@@ -3809,11 +3822,12 @@ async function fetchWithRetry(url, options, maxAttempts = 3, runtimeOptions = {}
       }
 
       const bodyText = await safeReadResponseText(response);
+      const retryAfterMs = readRetryAfterMs(response);
       if (response.status === 429 && runtimeOptions?.modelName) {
         noteModelApiLimiterOutcome(runtimeOptions.modelName, {
           statusCode: 429,
           latencyMs: Date.now() - requestStartedAt,
-          retryAfterMs: readRetryAfterMs(response)
+          retryAfterMs
         });
       }
       if (RETRYABLE_STATUS.has(response.status) && attempt < maxAttempts) {
@@ -3823,6 +3837,7 @@ async function fetchWithRetry(url, options, maxAttempts = 3, runtimeOptions = {}
 
       const httpError = new Error(`LongCat 接口错误 (${response.status}): ${bodyText}`);
       httpError.statusCode = response.status;
+      httpError.retryAfterMs = retryAfterMs;
       throw httpError;
     } catch (error) {
       if (timeoutId) {
