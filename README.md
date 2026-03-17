@@ -1,5 +1,7 @@
 # TransAI
 
+[![Build Chrome Extension](https://github.com/killertop/TransAI/actions/workflows/build-extension.yml/badge.svg)](https://github.com/killertop/TransAI/actions/workflows/build-extension.yml)
+
 一个基于 Manifest V3 的 Chrome 翻译插件，用于把网页中的非简体中文内容按当前域名按需翻译为简体中文。  
 A Manifest V3 Chrome extension that translates non‑Simplified‑Chinese webpage content into Simplified Chinese on a per-domain basis.
 
