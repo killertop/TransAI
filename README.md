@@ -28,6 +28,30 @@ A Manifest V3 Chrome extension that translates non‑Simplified‑Chinese webpag
 3. 点击“加载已解压的扩展程序”
 4. 选择当前仓库目录
 
+## GitHub 下载与加载
+
+- GitHub 可以托管源码，也可以配合 GitHub Actions / Releases 生成可下载的打包产物，但当前仓库默认只提供源码，不直接附带可安装的 `.crx` 文件。
+- 如果你是普通用户，最简单的方式是：
+  1. 打开仓库主页，点击 `Code` -> `Download ZIP`
+  2. 解压下载后的 ZIP 文件
+  3. 打开 Chrome，进入 `chrome://extensions/`
+  4. 打开右上角“开发者模式”
+  5. 点击“加载已解压的扩展程序”
+  6. 选择刚刚解压后的项目文件夹
+- 如果后续仓库增加了 `Releases` 或自动打包流程，再可以直接下载对应压缩包使用。
+
+## GitHub Packaging And Loading
+
+- GitHub can host the source code and can also publish packaged artifacts via GitHub Actions or Releases, but this repository currently ships source code only and does not provide a prebuilt `.crx` file by default.
+- For most users, the simplest way to install it is:
+  1. Open the repository page and click `Code` -> `Download ZIP`
+  2. Extract the downloaded ZIP file
+  3. Open Chrome and go to `chrome://extensions/`
+  4. Turn on `Developer mode`
+  5. Click `Load unpacked`
+  6. Select the extracted project folder
+- If this repository adds `Releases` or an automated packaging workflow later, you can download those packaged files directly instead.
+
 ## 使用
 
 1. 点击插件图标打开弹窗
