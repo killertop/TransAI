@@ -1,6 +1,12 @@
 const statusEl = document.getElementById("status");
 const globalToggleEl = document.getElementById("globalToggle");
 const testApiBtn = document.getElementById("testApiBtn");
+const apiEndpointEl = document.getElementById("apiEndpoint");
+const apiKeyEl = document.getElementById("apiKey");
+const primaryModelEl = document.getElementById("primaryModel");
+const backupModelEl = document.getElementById("backupModel");
+const saveApiBtn = document.getElementById("saveApiBtn");
+const resetApiBtn = document.getElementById("resetApiBtn");
 
 initPopup().catch((error) => {
   setStatus(`初始化失败：${error.message}`);
@@ -33,7 +39,7 @@ globalToggleEl.addEventListener("change", async () => {
 
 testApiBtn.addEventListener("click", async () => {
   lockActions(true);
-  setStatus("正在测试内置 LLM 模型...");
+  setStatus("正在测试当前接口配置...");
 
   const result = await sendRuntimeMessage({
     type: "testApiConnection"
@@ -49,25 +55,102 @@ testApiBtn.addEventListener("click", async () => {
   setStatus(result.message || "内置 LLM 模型可用", true);
 });
 
-async function initPopup() {
+saveApiBtn.addEventListener("click", async () => {
+  lockActions(true);
+  setStatus("正在保存接口配置...");
+
   const result = await sendRuntimeMessage({
-    type: "getGlobalTranslationStatus"
+    type: "setRuntimeApiConfig",
+    config: readApiConfigFromForm()
   });
 
+  lockActions(false);
+
   if (!result?.ok) {
-    globalToggleEl.disabled = true;
-    testApiBtn.disabled = true;
-    setStatus(result?.error || "读取开关状态失败");
+    setStatus(result?.error || "保存接口配置失败");
     return;
   }
 
-  globalToggleEl.checked = Boolean(result.enabled);
+  writeApiConfigToForm(result.config || readApiConfigFromForm());
+  setStatus("接口配置已保存", true);
+});
+
+resetApiBtn.addEventListener("click", async () => {
+  lockActions(true);
+  setStatus("正在恢复默认配置...");
+
+  const result = await sendRuntimeMessage({
+    type: "resetRuntimeApiConfig"
+  });
+
   lockActions(false);
+
+  if (!result?.ok) {
+    setStatus(result?.error || "恢复默认配置失败");
+    return;
+  }
+
+  writeApiConfigToForm(result.config || {});
+  setStatus("已恢复默认配置", true);
+});
+
+async function initPopup() {
+  const [statusResult, apiConfigResult] = await Promise.all([
+    sendRuntimeMessage({
+      type: "getGlobalTranslationStatus"
+    }),
+    sendRuntimeMessage({
+      type: "getRuntimeApiConfig"
+    })
+  ]);
+
+  if (!statusResult?.ok) {
+    globalToggleEl.disabled = true;
+    testApiBtn.disabled = true;
+    saveApiBtn.disabled = true;
+    resetApiBtn.disabled = true;
+    setStatus(statusResult?.error || "读取开关状态失败");
+    return;
+  }
+
+  if (!apiConfigResult?.ok) {
+    testApiBtn.disabled = true;
+    saveApiBtn.disabled = true;
+    resetApiBtn.disabled = true;
+    setStatus(apiConfigResult?.error || "读取接口配置失败");
+    return;
+  }
+
+  globalToggleEl.checked = Boolean(statusResult.enabled);
+  writeApiConfigToForm(apiConfigResult.config || {});
+  lockActions(false);
+}
+
+function readApiConfigFromForm() {
+  return {
+    endpoint: apiEndpointEl.value,
+    apiKey: apiKeyEl.value,
+    primaryModel: primaryModelEl.value,
+    backupModel: backupModelEl.value
+  };
+}
+
+function writeApiConfigToForm(config) {
+  apiEndpointEl.value = String(config?.endpoint || "");
+  apiKeyEl.value = String(config?.apiKey || "");
+  primaryModelEl.value = String(config?.primaryModel || "");
+  backupModelEl.value = String(config?.backupModel || "");
 }
 
 function lockActions(locked) {
   globalToggleEl.disabled = locked;
   testApiBtn.disabled = locked;
+  saveApiBtn.disabled = locked;
+  resetApiBtn.disabled = locked;
+  apiEndpointEl.disabled = locked;
+  apiKeyEl.disabled = locked;
+  primaryModelEl.disabled = locked;
+  backupModelEl.disabled = locked;
 }
 
 function setStatus(message, isOk = false) {

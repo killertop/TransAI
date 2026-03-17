@@ -20,12 +20,20 @@ const API_ENDPOINT = decodeObfuscatedText(OBFUSCATED_RUNTIME_API_CONFIG.endpoint
 const EMBEDDED_API_KEY = decodeObfuscatedText(OBFUSCATED_RUNTIME_API_CONFIG.token);
 const PRIMARY_MODEL_NAME = "LongCat-Flash-Lite";
 const BACKUP_MODEL_NAME = "LongCat-Flash-Chat";
-const MODEL_CANDIDATES = Object.freeze([PRIMARY_MODEL_NAME, BACKUP_MODEL_NAME]);
+const DEFAULT_MODEL_CANDIDATES = Object.freeze([PRIMARY_MODEL_NAME, BACKUP_MODEL_NAME]);
+const DEFAULT_RUNTIME_API_CONFIG = Object.freeze({
+  endpoint: API_ENDPOINT,
+  apiKey: EMBEDDED_API_KEY,
+  primaryModel: PRIMARY_MODEL_NAME,
+  backupModel: BACKUP_MODEL_NAME
+});
 const LEGACY_API_KEY_STORAGE_KEY = "longcatApiKey";
 const LEGACY_API_ENDPOINT_STORAGE_KEY = "openaiApiEndpoint";
 const LEGACY_API_KEY_STORAGE_SCOPE_KEY = "apiKeyStorageScope";
+const API_CONFIG_STORAGE_KEY = "runtimeApiConfig";
 const STORAGE_AREA_LOCAL = "local";
 const API_CONFIG_MODE_BUILT_IN = "built-in";
+const API_CONFIG_MODE_CUSTOM = "custom";
 const REMOVED_SETTINGS_MESSAGE = "当前版本已移除设置页，API 地址与 Token 已固定在扩展内部。";
 const GLOBAL_SWITCH_ONLY_MESSAGE = "当前版本仅支持全局总开关，不再提供按网站单独配置。";
 const GLOBAL_TRANSLATION_ENABLED_KEY = "globalTranslationEnabled";
@@ -128,11 +136,36 @@ const RECOMMENDED_PERFORMANCE_SETTINGS = Object.freeze({
 });
 let runtimePerformanceSettings = sanitizePerformanceSettings();
 let performanceSettingsLoadPromise = null;
+let runtimeApiConfig = sanitizeRuntimeApiConfig();
+let apiConfigLoadPromise = null;
 
 function sanitizePerformanceSettings(_rawSettings = null) {
   return {
     ...RECOMMENDED_PERFORMANCE_SETTINGS
   };
+}
+
+function sanitizeModelName(rawValue, fallback) {
+  const value = String(rawValue ?? "").trim();
+  return value || String(fallback || "").trim();
+}
+
+function sanitizeRuntimeApiConfig(rawConfig = null) {
+  const raw = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+  return {
+    endpoint:
+      normalizeApiEndpoint(raw.endpoint) || DEFAULT_RUNTIME_API_CONFIG.endpoint,
+    apiKey:
+      sanitizeApiKey(raw.apiKey) || DEFAULT_RUNTIME_API_CONFIG.apiKey,
+    primaryModel: sanitizeModelName(raw.primaryModel, DEFAULT_RUNTIME_API_CONFIG.primaryModel),
+    backupModel: sanitizeModelName(raw.backupModel, DEFAULT_RUNTIME_API_CONFIG.backupModel)
+  };
+}
+
+function applyRuntimeApiConfig(nextConfig = null) {
+  runtimeApiConfig = sanitizeRuntimeApiConfig(nextConfig);
+  apiConfigLoadPromise = Promise.resolve(runtimeApiConfig);
+  return runtimeApiConfig;
 }
 
 function applyRuntimePerformanceSettings(nextSettings) {
@@ -154,6 +187,11 @@ async function loadPerformanceSettingsFromStorage() {
   return applyRuntimePerformanceSettings(RECOMMENDED_PERFORMANCE_SETTINGS);
 }
 
+async function loadApiConfigFromStorage() {
+  const data = await chrome.storage.sync.get([API_CONFIG_STORAGE_KEY]);
+  return applyRuntimeApiConfig(data?.[API_CONFIG_STORAGE_KEY]);
+}
+
 async function ensurePerformanceSettingsLoaded() {
   if (!performanceSettingsLoadPromise) {
     performanceSettingsLoadPromise = loadPerformanceSettingsFromStorage().catch((error) => {
@@ -162,6 +200,16 @@ async function ensurePerformanceSettingsLoaded() {
     });
   }
   return performanceSettingsLoadPromise;
+}
+
+async function ensureApiConfigLoaded() {
+  if (!apiConfigLoadPromise) {
+    apiConfigLoadPromise = loadApiConfigFromStorage().catch((error) => {
+      apiConfigLoadPromise = null;
+      throw error;
+    });
+  }
+  return apiConfigLoadPromise;
 }
 const LANGUAGE_PROFILES = {
   en: {
@@ -318,6 +366,7 @@ async function runStartupMaintenance() {
   await ensureStorageAccessPolicy();
   await cleanupLegacyApiConfig();
   await cleanupLegacySiteRules();
+  await ensureApiConfigLoaded();
   await ensurePerformanceSettingsLoaded();
   await cleanupLegacyDynamicScripts();
   const globalEnabled = await getGlobalTranslationEnabled();
@@ -402,6 +451,27 @@ if (chrome.runtime?.onMessage?.addListener) {
 
     if (message.type === "getApiKeyMask") {
       handleGetApiKeyMask()
+        .then(sendResponse)
+        .catch((error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+
+    if (message.type === "getRuntimeApiConfig") {
+      handleGetRuntimeApiConfig()
+        .then(sendResponse)
+        .catch((error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+
+    if (message.type === "setRuntimeApiConfig") {
+      handleSetRuntimeApiConfig(message)
+        .then(sendResponse)
+        .catch((error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+
+    if (message.type === "resetRuntimeApiConfig") {
+      handleResetRuntimeApiConfig()
         .then(sendResponse)
         .catch((error) => sendResponse({ ok: false, error: error.message }));
       return true;
@@ -790,6 +860,46 @@ async function handleGetApiKeyMask() {
     storageScope: await getApiKeyStorageScope(),
     apiEndpoint,
     defaultApiEndpoint: API_ENDPOINT
+  };
+}
+
+async function handleGetRuntimeApiConfig() {
+  const config = await ensureApiConfigLoaded();
+  return {
+    ok: true,
+    config: {
+      endpoint: config.endpoint,
+      apiKey: config.apiKey,
+      primaryModel: config.primaryModel,
+      backupModel: config.backupModel
+    },
+    defaults: {
+      endpoint: DEFAULT_RUNTIME_API_CONFIG.endpoint,
+      apiKey: DEFAULT_RUNTIME_API_CONFIG.apiKey,
+      primaryModel: DEFAULT_RUNTIME_API_CONFIG.primaryModel,
+      backupModel: DEFAULT_RUNTIME_API_CONFIG.backupModel
+    }
+  };
+}
+
+async function handleSetRuntimeApiConfig(message) {
+  const config = sanitizeRuntimeApiConfig(message?.config);
+  await chrome.storage.sync.set({
+    [API_CONFIG_STORAGE_KEY]: config
+  });
+  applyRuntimeApiConfig(config);
+  return {
+    ok: true,
+    config
+  };
+}
+
+async function handleResetRuntimeApiConfig() {
+  await chrome.storage.sync.remove([API_CONFIG_STORAGE_KEY]);
+  const config = applyRuntimeApiConfig(DEFAULT_RUNTIME_API_CONFIG);
+  return {
+    ok: true,
+    config
   };
 }
 
@@ -1265,15 +1375,25 @@ function maskApiKey(apiKey) {
 }
 
 async function getApiKeyStorageScope() {
-  return sanitizeApiKey(EMBEDDED_API_KEY) ? API_CONFIG_MODE_BUILT_IN : "";
+  const config = await ensureApiConfigLoaded();
+  return (
+    config.endpoint === DEFAULT_RUNTIME_API_CONFIG.endpoint &&
+    config.apiKey === DEFAULT_RUNTIME_API_CONFIG.apiKey &&
+    config.primaryModel === DEFAULT_RUNTIME_API_CONFIG.primaryModel &&
+    config.backupModel === DEFAULT_RUNTIME_API_CONFIG.backupModel
+  )
+    ? API_CONFIG_MODE_BUILT_IN
+    : API_CONFIG_MODE_CUSTOM;
 }
 
 async function getApiKey() {
-  return sanitizeApiKey(EMBEDDED_API_KEY);
+  const config = await ensureApiConfigLoaded();
+  return sanitizeApiKey(config.apiKey);
 }
 
 async function getApiEndpointOrDefault() {
-  return API_ENDPOINT;
+  const config = await ensureApiConfigLoaded();
+  return config.endpoint;
 }
 
 async function getApiKeyOrThrow() {
@@ -1290,7 +1410,7 @@ async function getGlobalTranslationEnabled() {
 }
 
 function getModelCandidates() {
-  return MODEL_CANDIDATES.slice();
+  return [runtimeApiConfig.primaryModel, runtimeApiConfig.backupModel].filter(Boolean);
 }
 
 function getBuiltInTranslationCandidates(apiKey, apiEndpoint = API_ENDPOINT) {
@@ -1299,7 +1419,10 @@ function getBuiltInTranslationCandidates(apiKey, apiEndpoint = API_ENDPOINT) {
   if (!primaryKey || !primaryEndpoint) {
     return [];
   }
-  return MODEL_CANDIDATES.map((modelName) => ({
+  const modelCandidates = Array.from(
+    new Set([runtimeApiConfig.primaryModel, runtimeApiConfig.backupModel].filter(Boolean))
+  );
+  return modelCandidates.map((modelName) => ({
     providerId: "longcat",
     providerKey: "longcat",
     rateLimitKey: `longcat:${modelName}`,

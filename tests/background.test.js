@@ -70,7 +70,7 @@ function createChromeMock() {
 function loadBackgroundForTest() {
   const filePath = path.join(__dirname, '..', 'background.js');
   const source = fs.readFileSync(filePath, 'utf8');
-  const exposeSource = `${source}\n;globalThis.__testExports = {\n  parseModelTranslations,\n  recoverMissingTranslations,\n  handleTranslateBatch,\n  getApiKey,\n  getApiEndpointOrDefault,\n  getApiKeyStorageScope,\n  getGlobalTranslationEnabled,\n  getModelCandidates,\n  cleanupLegacyApiConfig,\n  validateBuiltInApiConnection,\n  estimateBestEffortMaxTokens,\n  resolveModelRateLimitStrategy,\n  getModelApiLimiterState,\n  noteModelApiLimiterOutcome,\n  getBuiltInTranslationCandidates,\n  isCandidateBatchSuitable,\n  getProviderCircuitBreakerState,\n  beginCircuitRequest,\n  markCircuitRequestFailure,\n  releaseCircuitRequest\n};`;
+  const exposeSource = `${source}\n;globalThis.__testExports = {\n  parseModelTranslations,\n  recoverMissingTranslations,\n  handleTranslateBatch,\n  getApiKey,\n  getApiEndpointOrDefault,\n  getApiKeyStorageScope,\n  getGlobalTranslationEnabled,\n  getModelCandidates,\n  cleanupLegacyApiConfig,\n  validateBuiltInApiConnection,\n  estimateBestEffortMaxTokens,\n  resolveModelRateLimitStrategy,\n  getModelApiLimiterState,\n  noteModelApiLimiterOutcome,\n  getBuiltInTranslationCandidates,\n  isCandidateBatchSuitable,\n  getProviderCircuitBreakerState,\n  beginCircuitRequest,\n  markCircuitRequestFailure,\n  releaseCircuitRequest,\n  handleGetRuntimeApiConfig,\n  handleSetRuntimeApiConfig,\n  handleResetRuntimeApiConfig\n};`;
 
   const context = {
     console,
@@ -115,7 +115,10 @@ async function main() {
     getProviderCircuitBreakerState,
     beginCircuitRequest,
     markCircuitRequestFailure,
-    releaseCircuitRequest
+    releaseCircuitRequest,
+    handleGetRuntimeApiConfig,
+    handleSetRuntimeApiConfig,
+    handleResetRuntimeApiConfig
   } = context.__testExports;
 
   const sourceTexts = ['Hello', 'Beta', 'World'];
@@ -238,6 +241,34 @@ async function main() {
   releaseCircuitRequest({ providerKey: 'longcat', startedInHalfOpen: false });
   assert.equal(await getApiKeyStorageScope(), 'built-in');
   assert.equal(await getGlobalTranslationEnabled(), false);
+
+  const runtimeApiConfigResult = await handleGetRuntimeApiConfig();
+  assert.equal(runtimeApiConfigResult.ok, true);
+  assert.equal(runtimeApiConfigResult.config.endpoint, builtInEndpoint);
+  assert.equal(runtimeApiConfigResult.config.apiKey, builtInApiKey);
+  assert.equal(runtimeApiConfigResult.config.primaryModel, 'LongCat-Flash-Lite');
+  assert.equal(runtimeApiConfigResult.config.backupModel, 'LongCat-Flash-Chat');
+
+  const customConfigResult = await handleSetRuntimeApiConfig({
+    config: {
+      endpoint: 'https://example.com/v1',
+      apiKey: 'custom-token-123',
+      primaryModel: 'custom-primary',
+      backupModel: 'custom-backup'
+    }
+  });
+  assert.equal(customConfigResult.ok, true);
+  assert.equal(await getApiEndpointOrDefault(), 'https://example.com/v1/chat/completions');
+  assert.equal(await getApiKey(), 'custom-token-123');
+  assert.equal(await getApiKeyStorageScope(), 'custom');
+  assert.deepEqual(toPlain(getModelCandidates()), ['custom-primary', 'custom-backup']);
+
+  const resetConfigResult = await handleResetRuntimeApiConfig();
+  assert.equal(resetConfigResult.ok, true);
+  assert.equal(await getApiEndpointOrDefault(), builtInEndpoint);
+  assert.equal(await getApiKey(), builtInApiKey);
+  assert.equal(await getApiKeyStorageScope(), 'built-in');
+  assert.deepEqual(toPlain(getModelCandidates()), ['LongCat-Flash-Lite', 'LongCat-Flash-Chat']);
 
   const requestedModelsA = [];
   context.fetch = async (_url, options) => {

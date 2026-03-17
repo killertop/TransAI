@@ -8,7 +8,7 @@
 
 body {
   margin: 0;
-  width: 360px;
+  width: 400px;
   font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   background: radial-gradient(circle at 12% -10%, #ffffff 0, #eff6ff 45%, #dceafe 100%);
 }
@@ -158,6 +158,79 @@ h1 {
   margin-top: 10px;
 }
 
+.config-card {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #d5e4f8;
+}
+
+.config-head {
+  margin-bottom: 10px;
+}
+
+.config-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #243950;
+}
+
+.config-desc {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #60758d;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.field:first-of-type {
+  margin-top: 0;
+}
+
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #36506f;
+}
+
+.field-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cad9ef;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #203550;
+  background: #fdfefe;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: #2b78eb;
+  box-shadow: 0 0 0 3px rgba(43, 120, 235, 0.14);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.config-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
 .action-btn {
   width: 100%;
   border: 1px solid #b8d1f5;
@@ -179,6 +252,12 @@ h1 {
 .action-btn:disabled {
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+.action-btn.tertiary {
+  color: #516882;
+  border-color: #cfdaea;
+  background: #f6f9fd;
 }
 
 .status {

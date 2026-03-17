@@ -37,6 +37,39 @@
         <button id="testApiBtn" class="action-btn secondary" type="button">测试接口</button>
       </div>
 
+      <section class="config-card">
+        <div class="config-head">
+          <p class="config-title">接口配置</p>
+          <p class="config-desc">可修改 API 地址、Token 和模型名称；默认已填入当前内置配置。</p>
+        </div>
+
+        <label class="field">
+          <span class="field-label">API 地址</span>
+          <input id="apiEndpoint" class="field-input" type="text" spellcheck="false" />
+        </label>
+
+        <label class="field">
+          <span class="field-label">Token</span>
+          <input id="apiKey" class="field-input" type="password" spellcheck="false" />
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span class="field-label">常规模型</span>
+            <input id="primaryModel" class="field-input" type="text" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span class="field-label">后备模型</span>
+            <input id="backupModel" class="field-input" type="text" spellcheck="false" />
+          </label>
+        </div>
+
+        <div class="config-actions">
+          <button id="saveApiBtn" class="action-btn" type="button">保存配置</button>
+          <button id="resetApiBtn" class="action-btn tertiary" type="button">恢复默认</button>
+        </div>
+      </section>
+
       <p id="status" class="status" aria-live="polite"></p>
     </main>
 
