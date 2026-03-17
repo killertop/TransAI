@@ -32,10 +32,9 @@
 1. 点击插件图标打开弹窗
 2. 打开“启用自动翻译”总开关
 3. 如需修改接口，可在弹窗里直接编辑 API 地址、Token、常规模型、后备模型并保存
-4. 可在弹窗里切换目标语言，默认简体中文，可选英语  
-   You can switch the target language in the popup. The default is Simplified Chinese, and English is also supported.
-5. 如需检查当前配置是否可用，可点击“测试接口”
-6. 回到目标网页，插件会自动处理非目标语言页面
+4. 如需检查当前配置是否可用，可点击“测试接口”
+5. 回到目标网页，插件会自动把非简体中文内容翻译为简体中文  
+   The extension will translate non-Simplified-Chinese content into Simplified Chinese on the current page.
 
 Token 输入框支持显示 / 隐藏切换，便于复制和核对。  
 The token field supports show/hide toggle for easier copy and verification.

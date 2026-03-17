@@ -324,7 +324,6 @@ const DEFAULT_RUNTIME_PERFORMANCE_SETTINGS = Object.freeze({
   contentAdaptiveItemOffset: RECOMMENDED_SPEED_PROFILE.adaptiveItemOffset || 0,
   contentAdaptiveCharOffset: RECOMMENDED_SPEED_PROFILE.adaptiveCharOffset || 0
 });
-const DEFAULT_TARGET_LANGUAGE_CODE = "zh-Hans";
 
 let siteEnabled = false;
 let tabPaused = false;
@@ -343,7 +342,6 @@ let isScrolling = false;
 let runtimeContextInvalidated = false;
 let queueSerial = 0;
 let pageLanguageHint = "";
-let runtimeTargetLanguageCode = DEFAULT_TARGET_LANGUAGE_CODE;
 let pageAutoTranslateEligible = true;
 let adaptiveBatchItemLimit = ADAPTIVE_BATCH_INITIAL_ITEMS;
 let adaptiveBatchCharLimit = ADAPTIVE_BATCH_INITIAL_CHARS;
@@ -400,18 +398,6 @@ bootstrap().catch((error) => {
   console.warn("[LongCat Translate] 初始化失败", error);
 });
 
-function sanitizeTargetLanguageCode(rawValue) {
-  return String(rawValue || "").trim().toLowerCase() === "en" ? "en" : DEFAULT_TARGET_LANGUAGE_CODE;
-}
-
-function isEnglishTargetLanguage() {
-  return runtimeTargetLanguageCode === "en";
-}
-
-function getTargetLanguageLabel() {
-  return isEnglishTargetLanguage() ? "英语" : "简体中文";
-}
-
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== "object") {
     return false;
@@ -427,7 +413,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "siteSettingChanged") {
-    runtimeTargetLanguageCode = sanitizeTargetLanguageCode(message.targetLanguageCode);
     if (message.enabled) {
       pageLanguageHint = detectPageLanguageHint();
       pageAutoTranslateEligible = shouldAutoTranslateCurrentPage();
@@ -455,7 +440,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "triggerTranslateNow") {
     if (!pageAutoTranslateEligible) {
-      sendResponse({ ok: false, error: `当前页面识别为${getTargetLanguageLabel()}，自动跳过翻译` });
+      sendResponse({ ok: false, error: "当前页面识别为简体中文，自动跳过翻译" });
       return false;
     }
     if (!siteEnabled) {
@@ -476,7 +461,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     pageLanguageHint = detectPageLanguageHint();
     pageAutoTranslateEligible = shouldAutoTranslateCurrentPage();
     if (!pageAutoTranslateEligible) {
-      sendResponse({ ok: false, error: `当前页面识别为${getTargetLanguageLabel()}，自动跳过翻译` });
+      sendResponse({ ok: false, error: "当前页面识别为简体中文，自动跳过翻译" });
       return false;
     }
     enableTranslation();
@@ -544,12 +529,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 async function bootstrap() {
-  const statusResult = await sendRuntimeMessage({
-    type: "getGlobalTranslationStatus"
-  });
-  if (statusResult?.ok) {
-    runtimeTargetLanguageCode = sanitizeTargetLanguageCode(statusResult.targetLanguageCode);
-  }
   pageLanguageHint = detectPageLanguageHint();
   pageAutoTranslateEligible = shouldAutoTranslateCurrentPage();
   loadSessionCache();
@@ -557,7 +536,7 @@ async function bootstrap() {
   if (!document?.body || typeof document.body.children === "undefined") {
     return;
   }
-  if (pageAutoTranslateEligible && statusResult?.ok && statusResult.enabled) {
+  if (pageAutoTranslateEligible) {
     enableTranslation();
   }
 }
@@ -2461,11 +2440,11 @@ function isEligibleForSelectionPriority(node, state) {
     return false;
   }
 
-  if (shouldSkipTargetLanguageText(state.coreText)) {
+  if (isMostlyChinese(state.coreText)) {
     return false;
   }
 
-  if (!containsTranslatableScript(state.coreText)) {
+  if (!/[A-Za-z\u00C0-\u024F\u0400-\u04FF\u3040-\u30FF\uAC00-\uD7AF]/.test(state.coreText)) {
     return false;
   }
 
@@ -2515,7 +2494,7 @@ function isEligibleTextNode(node, allowIdlePrefetch = false) {
     return false;
   }
 
-  if (shouldSkipTargetLanguageText(coreText)) {
+  if (isMostlyChinese(coreText)) {
     return false;
   }
 
@@ -2523,7 +2502,7 @@ function isEligibleTextNode(node, allowIdlePrefetch = false) {
     return false;
   }
 
-  if (!containsTranslatableScript(coreText)) {
+  if (!/[A-Za-z\u00C0-\u024F\u0400-\u04FF\u3040-\u30FF\uAC00-\uD7AF]/.test(coreText)) {
     return false;
   }
 
@@ -2579,7 +2558,7 @@ function isEligibleElementAttributeTarget(target, allowIdlePrefetch = false) {
     return false;
   }
 
-  if (shouldSkipTargetLanguageText(coreText)) {
+  if (isMostlyChinese(coreText)) {
     return false;
   }
 
@@ -2587,7 +2566,7 @@ function isEligibleElementAttributeTarget(target, allowIdlePrefetch = false) {
     return false;
   }
 
-  if (!containsTranslatableScript(coreText)) {
+  if (!/[A-Za-z\u00C0-\u024F\u0400-\u04FF\u3040-\u30FF\uAC00-\uD7AF]/.test(coreText)) {
     return false;
   }
 
@@ -2844,29 +2823,6 @@ function isMostlyChinese(text) {
   return chineseCount > 0 && chineseCount / text.length > 0.45;
 }
 
-function isMostlyEnglish(text) {
-  if (!text) {
-    return false;
-  }
-
-  const normalized = String(text || "").trim();
-  if (!normalized || containsChineseChar(normalized)) {
-    return false;
-  }
-
-  const latinCount = countMatches(normalized, /[A-Za-z]/g);
-  const foreignScriptCount = countMatches(
-    normalized,
-    /[\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]/g
-  );
-  if (latinCount < 6 || foreignScriptCount > 0) {
-    return false;
-  }
-
-  const englishWords = normalized.match(/[A-Za-z]+/g) || [];
-  return englishWords.length >= 2 || latinCount / Math.max(1, normalized.length) > 0.35;
-}
-
 function hasNonEnglishScript(text) {
   return /[\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff\u00c0-\u024f]/i.test(
     String(text || "")
@@ -2879,30 +2835,6 @@ function isLikelyTargetChineseText(text) {
 
 function isAcceptableSameChineseLikeText(text) {
   return isLikelyTargetChineseText(text);
-}
-
-function isLikelyTargetEnglishText(text) {
-  const normalized = normalizeComparisonText(text);
-  if (!normalized || containsChineseChar(normalized)) {
-    return false;
-  }
-  return isLikelyEnglishPhrase(normalized) || isMostlyEnglish(normalized);
-}
-
-function isTargetLanguageText(text) {
-  return isEnglishTargetLanguage()
-    ? isLikelyTargetEnglishText(text)
-    : isLikelyTargetChineseText(text);
-}
-
-function shouldSkipTargetLanguageText(text) {
-  return isEnglishTargetLanguage() ? isMostlyEnglish(text) : isMostlyChinese(text);
-}
-
-function containsTranslatableScript(text) {
-  return /[A-Za-z\u00C0-\u024F\u0400-\u04FF\u3040-\u30FF\uAC00-\uD7AF\u4E00-\u9FFF]/.test(
-    String(text || "")
-  );
 }
 
 function getElementTextSample(element, maxChars = BLOCK_SAMPLE_TEXT_CHARS) {
@@ -3165,23 +3097,7 @@ function isTraditionalChineseLanguageHint(languageHint) {
   );
 }
 
-function isEnglishLanguageHint(languageHint) {
-  const normalized = sanitizeLanguageHint(languageHint);
-  return normalized === "en" || normalized.startsWith("en-");
-}
-
 function shouldAutoTranslateCurrentPage() {
-  if (isEnglishTargetLanguage()) {
-    if (isEnglishLanguageHint(pageLanguageHint)) {
-      return false;
-    }
-    const englishSample = getElementTextSample(
-      document.body || document.documentElement,
-      BLOCK_SAMPLE_TEXT_CHARS
-    );
-    return !isMostlyEnglish(englishSample);
-  }
-
   if (isTraditionalChineseLanguageHint(pageLanguageHint)) {
     return true;
   }
@@ -3200,9 +3116,6 @@ function shouldAutoTranslateCurrentPage() {
 }
 
 function shouldSkipChineseRoot(root) {
-  if (isEnglishTargetLanguage()) {
-    return false;
-  }
   if (!root || isLikelyOverlayElement(root)) {
     return false;
   }
@@ -4285,10 +4198,6 @@ function hasLatinLetters(text) {
   return /[A-Za-z]/.test(String(text || ""));
 }
 
-function containsNonEnglishScript(text) {
-  return /[\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]/i.test(String(text || ""));
-}
-
 function isAcceptableTranslatedResult(sourceText, translatedText) {
   const normalizedSource = normalizeComparisonText(sourceText);
   const normalizedTranslated = normalizeComparisonText(translatedText);
@@ -4301,24 +4210,12 @@ function isAcceptableTranslatedResult(sourceText, translatedText) {
     return true;
   }
 
-  const sourceLooksTarget = isEnglishTargetLanguage()
-    ? isLikelyTargetEnglishText(normalizedSource)
-    : isLikelyTargetChineseText(normalizedSource);
+  const sourceLooksChinese = isLikelyTargetChineseText(normalizedSource);
   if (normalizedSource === normalizedTranslated) {
-    if (isEnglishTargetLanguage()) {
-      return sourceLooksTarget;
-    }
-    return sourceLooksTarget || isAcceptableSameChineseLikeText(normalizedSource);
+    return sourceLooksChinese || isAcceptableSameChineseLikeText(normalizedSource);
   }
 
-  if (isEnglishTargetLanguage()) {
-    if (containsChineseChar(normalizedTranslated) || containsNonEnglishScript(normalizedTranslated)) {
-      return false;
-    }
-    return hasLatinLetters(normalizedTranslated);
-  }
-
-  if (!containsChineseChar(normalizedTranslated) && !sourceLooksTarget) {
+  if (!containsChineseChar(normalizedTranslated) && !sourceLooksChinese) {
     return false;
   }
 
@@ -4915,7 +4812,7 @@ function getTranslationCacheKey(sourceText, contextMeta = null) {
     return "";
   }
 
-  const targetPrefix = `to:${runtimeTargetLanguageCode}`;
+  const targetPrefix = "to:zh-Hans";
 
   if (normalizedText.length <= SHORT_CONTEXT_MAX_CHARS) {
     const languageKey = resolveFailedPhraseLanguageKey(contextMeta);
