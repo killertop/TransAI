@@ -37,8 +37,8 @@ A Manifest V3 Chrome extension that translates non‑Simplified‑Chinese webpag
 5. 回到目标网页，插件会只在当前已开启的域名下，把非简体中文内容翻译为简体中文  
    The extension translates non-Simplified-Chinese content into Simplified Chinese only on domains you have enabled.
 
-Token 输入框支持显示 / 隐藏切换，便于复制和核对。  
-The token field supports show/hide toggle for easier copy and verification.
+Token 输入框会始终以隐藏形式显示，便于在弹窗内安全修改配置。  
+The token field always stays masked for safer editing inside the popup.
 
 ## 行为说明
 

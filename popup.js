@@ -8,7 +8,6 @@ const primaryModelEl = document.getElementById("primaryModel");
 const backupModelEl = document.getElementById("backupModel");
 const saveApiBtn = document.getElementById("saveApiBtn");
 const resetApiBtn = document.getElementById("resetApiBtn");
-const toggleApiKeyBtn = document.getElementById("toggleApiKeyBtn");
 let currentSiteContext = {
   tabId: null,
   hostname: "",
@@ -109,12 +108,6 @@ resetApiBtn.addEventListener("click", async () => {
   setStatus("已恢复默认配置", true);
 });
 
-toggleApiKeyBtn.addEventListener("click", () => {
-  const showing = apiKeyEl.type === "text";
-  apiKeyEl.type = showing ? "password" : "text";
-  toggleApiKeyBtn.textContent = showing ? "显示" : "隐藏";
-});
-
 async function initPopup() {
   const [tabContext, apiConfigResult] = await Promise.all([
     getCurrentTabContext(),
@@ -157,7 +150,6 @@ function lockActions(locked) {
   testApiBtn.disabled = locked;
   saveApiBtn.disabled = locked;
   resetApiBtn.disabled = locked;
-  toggleApiKeyBtn.disabled = locked;
   apiEndpointEl.disabled = locked;
   apiKeyEl.disabled = locked;
   primaryModelEl.disabled = locked;

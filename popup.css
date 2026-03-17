@@ -244,39 +244,6 @@ h1 {
   box-shadow: 0 0 0 3px rgba(43, 120, 235, 0.14);
 }
 
-.field-input-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.field-input-row .field-input {
-  margin: 0;
-}
-
-.field-toggle-btn {
-  border: 1px solid #cad9ef;
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #48627f;
-  background: #f8fbff;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.field-toggle-btn:hover:not(:disabled) {
-  border-color: #2b78eb;
-  color: #1f5fc9;
-}
-
-.field-toggle-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
 .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
