@@ -21,14 +21,6 @@ const EMBEDDED_API_KEY = decodeObfuscatedText(OBFUSCATED_RUNTIME_API_CONFIG.toke
 const PRIMARY_MODEL_NAME = "LongCat-Flash-Lite";
 const BACKUP_MODEL_NAME = "LongCat-Flash-Chat";
 const MODEL_CANDIDATES = Object.freeze([PRIMARY_MODEL_NAME, BACKUP_MODEL_NAME]);
-const INSTANT_BACKUP_API_BASE_URL = "https://killertop.duckdns.org/openai/v1";
-const INSTANT_BACKUP_API_KEY = "local-8AecBXSssAbMc7tYqW47l8DGShTug7PU";
-const INSTANT_BACKUP_MODEL_NAME = "instant";
-const INSTANT_BACKUP_MAX_OUTPUT_TOKENS = 3072;
-const INSTANT_BACKUP_REQUEST_TIMEOUT_MS = 22000;
-const INSTANT_BACKUP_MAX_BATCH_ITEMS = 24;
-const INSTANT_BACKUP_MAX_BATCH_CHARS = 2400;
-const INSTANT_BACKUP_HEDGE_DELAY_MS = 3000;
 const LEGACY_API_KEY_STORAGE_KEY = "longcatApiKey";
 const LEGACY_API_ENDPOINT_STORAGE_KEY = "openaiApiEndpoint";
 const LEGACY_API_KEY_STORAGE_SCOPE_KEY = "apiKeyStorageScope";
@@ -124,19 +116,6 @@ const FLASH_CHAT_RATE_LIMIT_STRATEGY = Object.freeze({
   timeoutCooldownMs: 4200,
   recoverySuccesses: 8,
   recoveryIntervalStepMs: 80
-});
-const INSTANT_BACKUP_RATE_LIMIT_STRATEGY = Object.freeze({
-  initialConcurrent: 2,
-  minConcurrent: 1,
-  maxConcurrent: 4,
-  initialMinIntervalMs: 180,
-  maxMinIntervalMs: 2600,
-  slowResponseMs: 6000,
-  severeSlowResponseMs: 14000,
-  cooldownBaseMs: 2200,
-  timeoutCooldownMs: 4200,
-  recoverySuccesses: 6,
-  recoveryIntervalStepMs: 120
 });
 const RECOMMENDED_PERFORMANCE_SETTINGS = Object.freeze({
   speedMode: "recommended",
@@ -1297,14 +1276,6 @@ async function getApiEndpointOrDefault() {
   return API_ENDPOINT;
 }
 
-function getInstantBackupEndpointOrDefault() {
-  return normalizeApiEndpoint(INSTANT_BACKUP_API_BASE_URL);
-}
-
-function getInstantBackupApiKey() {
-  return sanitizeApiKey(INSTANT_BACKUP_API_KEY);
-}
-
 async function getApiKeyOrThrow() {
   const key = await getApiKey();
   if (!key) {
@@ -1319,58 +1290,30 @@ async function getGlobalTranslationEnabled() {
 }
 
 function getModelCandidates() {
-  const models = [...MODEL_CANDIDATES];
-  if (getInstantBackupApiKey()) {
-    models.push(INSTANT_BACKUP_MODEL_NAME);
-  }
-  return models;
+  return MODEL_CANDIDATES.slice();
 }
 
 function getBuiltInTranslationCandidates(apiKey, apiEndpoint = API_ENDPOINT) {
   const primaryEndpoint = normalizeApiEndpoint(apiEndpoint) || API_ENDPOINT;
   const primaryKey = sanitizeApiKey(apiKey);
-  const candidates = [];
-  if (primaryKey && primaryEndpoint) {
-    candidates.push(
-      ...MODEL_CANDIDATES.map((modelName) => ({
-        providerId: "longcat",
-        providerKey: "longcat",
-        rateLimitKey: `longcat:${modelName}`,
-        modelName,
-        endpoint: primaryEndpoint,
-        apiKey: primaryKey,
-        temperature: 0.1,
-        maxOutputTokens: SAFE_MAX_OUTPUT_TOKENS,
-        requestTimeoutMs: REQUEST_TIMEOUT_MS,
-        healthCheckTimeoutMs: modelName === PRIMARY_MODEL_NAME ? 8000 : 12000,
-        retryAttempts: 3,
-        maxBatchItems: Number.MAX_SAFE_INTEGER,
-        maxBatchChars: Number.MAX_SAFE_INTEGER
-      }))
-    );
+  if (!primaryKey || !primaryEndpoint) {
+    return [];
   }
-
-  const instantEndpoint = getInstantBackupEndpointOrDefault();
-  const instantApiKey = getInstantBackupApiKey();
-  if (instantEndpoint && instantApiKey) {
-    candidates.push({
-      providerId: "chat2api",
-      providerKey: "chat2api",
-      rateLimitKey: `chat2api:${INSTANT_BACKUP_MODEL_NAME}`,
-      modelName: INSTANT_BACKUP_MODEL_NAME,
-      endpoint: instantEndpoint,
-      apiKey: instantApiKey,
-      temperature: 0,
-      maxOutputTokens: INSTANT_BACKUP_MAX_OUTPUT_TOKENS,
-      requestTimeoutMs: INSTANT_BACKUP_REQUEST_TIMEOUT_MS,
-      healthCheckTimeoutMs: 15000,
-      retryAttempts: 2,
-      maxBatchItems: INSTANT_BACKUP_MAX_BATCH_ITEMS,
-      maxBatchChars: INSTANT_BACKUP_MAX_BATCH_CHARS
-    });
-  }
-
-  return candidates.filter((candidate) => candidate.endpoint && candidate.apiKey && candidate.modelName);
+  return MODEL_CANDIDATES.map((modelName) => ({
+    providerId: "longcat",
+    providerKey: "longcat",
+    rateLimitKey: `longcat:${modelName}`,
+    modelName,
+    endpoint: primaryEndpoint,
+    apiKey: primaryKey,
+    temperature: 0.1,
+    maxOutputTokens: SAFE_MAX_OUTPUT_TOKENS,
+    requestTimeoutMs: REQUEST_TIMEOUT_MS,
+    healthCheckTimeoutMs: modelName === PRIMARY_MODEL_NAME ? 8000 : 12000,
+    retryAttempts: 3,
+    maxBatchItems: Number.MAX_SAFE_INTEGER,
+    maxBatchChars: Number.MAX_SAFE_INTEGER
+  }));
 }
 
 function countEntryChars(sourceEntries) {
@@ -2648,100 +2591,10 @@ async function requestTranslationViaCandidate(candidate, context) {
   );
 }
 
-async function requestPrimaryWithInstantHedge(primaryCandidate, hedgeCandidate, context) {
-  if (!primaryCandidate) {
-    if (hedgeCandidate) {
-      return requestTranslationViaCandidate(hedgeCandidate, context);
-    }
-    throw new Error("无可用翻译候选");
-  }
-
-  if (!hedgeCandidate || !isCandidateBatchSuitable(hedgeCandidate, context.normalizedEntries)) {
-    return requestTranslationViaCandidate(primaryCandidate, context);
-  }
-
-  const hedgeAwarePrimaryCandidate = {
-    ...primaryCandidate,
-    retryAttempts: 1
-  };
-
-  const primaryHandle = createTranslationCandidateRequestHandle(
-    primaryCandidate,
-    context,
-    hedgeAwarePrimaryCandidate
-  );
-  let hedgeTimer = null;
-  let hedgeStarted = false;
-  let hedgeHandle = null;
-
-  const startHedge = () => {
-    if (hedgeStarted) {
-      return hedgeHandle?.promise || Promise.reject(new Error("hedge 未启动"));
-    }
-    hedgeStarted = true;
-    hedgeHandle = createTranslationCandidateRequestHandle(hedgeCandidate, context);
-    return hedgeHandle.promise;
-  };
-
-  const hedgePromise = new Promise((resolve, reject) => {
-    hedgeTimer = setTimeout(() => {
-      hedgeTimer = null;
-      startHedge().then(resolve, reject);
-    }, INSTANT_BACKUP_HEDGE_DELAY_MS);
-  });
-
-  const primaryPromise = primaryHandle.promise.catch((error) => {
-    if (!hedgeStarted) {
-      if (hedgeTimer) {
-        clearTimeout(hedgeTimer);
-        hedgeTimer = null;
-      }
-      return startHedge();
-    }
-    throw error;
-  });
-
-  try {
-    const winner = await Promise.any([
-      primaryPromise.then((value) => ({ source: "primary", value })),
-      hedgePromise.then((value) => ({ source: "hedge", value }))
-    ]);
-    if (winner.source === "primary") {
-      hedgeHandle?.cancel();
-    } else {
-      primaryHandle.cancel();
-    }
-    return winner.value;
-  } catch (error) {
-    if (error instanceof AggregateError && Array.isArray(error.errors) && error.errors.length) {
-      throw error.errors[error.errors.length - 1];
-    }
-    throw error;
-  } finally {
-    if (hedgeTimer) {
-      clearTimeout(hedgeTimer);
-    }
-  }
-}
-
 async function requestTranslationWithBuiltInCandidates(candidates, context) {
-  const primaryCandidate =
-    candidates.find((candidate) => candidate.modelName === PRIMARY_MODEL_NAME) || candidates[0] || null;
-  const hedgeCandidate =
-    candidates.find((candidate) => candidate.modelName === INSTANT_BACKUP_MODEL_NAME) || null;
-  const fallbackCandidates = candidates.filter(
-    (candidate) => candidate !== primaryCandidate && candidate !== hedgeCandidate
-  );
-
   let lastError = null;
 
-  try {
-    return await requestPrimaryWithInstantHedge(primaryCandidate, hedgeCandidate, context);
-  } catch (error) {
-    lastError = error;
-  }
-
-  for (const candidate of fallbackCandidates) {
+  for (const candidate of candidates) {
     try {
       return await requestTranslationViaCandidate(candidate, context);
     } catch (error) {
@@ -3482,9 +3335,6 @@ function resolveModelRateLimitStrategy(modelName) {
   }
   if (normalized.includes("flash-chat")) {
     return FLASH_CHAT_RATE_LIMIT_STRATEGY;
-  }
-  if (normalized.includes("instant")) {
-    return INSTANT_BACKUP_RATE_LIMIT_STRATEGY;
   }
   return DEFAULT_MODEL_RATE_LIMIT_STRATEGY;
 }

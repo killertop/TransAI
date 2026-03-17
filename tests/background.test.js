@@ -203,15 +203,13 @@ async function main() {
 
   assert.ok(builtInApiKey.length > 12);
   assert.match(builtInEndpoint, /^https:\/\/.+\/chat\/completions$/);
-  assert.deepEqual(modelCandidates, ['LongCat-Flash-Lite', 'LongCat-Flash-Chat', 'instant']);
+  assert.deepEqual(modelCandidates, ['LongCat-Flash-Lite', 'LongCat-Flash-Chat']);
   assert.ok(largeTokenBudget > smallTokenBudget);
   assert.ok(largeTokenBudget <= 12288);
   const liteStrategy = resolveModelRateLimitStrategy('LongCat-Flash-Lite');
   const chatStrategy = resolveModelRateLimitStrategy('LongCat-Flash-Chat');
-  const instantStrategy = resolveModelRateLimitStrategy('instant');
   assert.equal(liteStrategy.initialConcurrent, 4);
   assert.equal(chatStrategy.initialConcurrent, 2);
-  assert.equal(instantStrategy.initialConcurrent, 2);
   const chatLimiterState = getModelApiLimiterState('LongCat-Flash-Chat');
   const previousChatConcurrent = chatLimiterState.currentMaxConcurrent;
   noteModelApiLimiterOutcome('LongCat-Flash-Chat', {
@@ -223,24 +221,9 @@ async function main() {
   assert.ok(chatLimiterState.currentMinIntervalMs > chatStrategy.initialMinIntervalMs);
   assert.ok(chatLimiterState.cooldownUntil > Date.now());
   const builtInCandidates = toPlain(getBuiltInTranslationCandidates(builtInApiKey, builtInEndpoint));
-  const instantCandidate = builtInCandidates.find((item) => item.modelName === 'instant');
   const flashChatCandidate = builtInCandidates.find((item) => item.modelName === 'LongCat-Flash-Chat');
-  const instantOnlyCandidates = toPlain(getBuiltInTranslationCandidates('', builtInEndpoint));
-  assert.equal(Boolean(instantCandidate), true);
   assert.equal(Boolean(flashChatCandidate), true);
-  assert.deepEqual(instantOnlyCandidates.map((item) => item.modelName), ['instant']);
-  assert.equal(instantCandidate.maxBatchItems, 24);
-  assert.equal(instantCandidate.maxBatchChars, 2400);
   assert.equal(flashChatCandidate.healthCheckTimeoutMs, 12000);
-  assert.equal(instantCandidate.healthCheckTimeoutMs, 15000);
-  assert.equal(
-    isCandidateBatchSuitable(instantCandidate, Array.from({ length: 24 }, () => ({ text: 'A'.repeat(80) }))),
-    true
-  );
-  assert.equal(
-    isCandidateBatchSuitable(instantCandidate, Array.from({ length: 25 }, () => ({ text: 'A'.repeat(80) }))),
-    false
-  );
   const longcatCircuitA = beginCircuitRequest('longcat');
   markCircuitRequestFailure(longcatCircuitA);
   const longcatCircuitB = beginCircuitRequest('longcat');
@@ -252,7 +235,6 @@ async function main() {
   const longcatCircuitE = beginCircuitRequest('longcat');
   markCircuitRequestFailure(longcatCircuitE);
   assert.equal(getProviderCircuitBreakerState('longcat').status, 'open');
-  assert.equal(getProviderCircuitBreakerState('chat2api').status, 'closed');
   releaseCircuitRequest({ providerKey: 'longcat', startedInHalfOpen: false });
   assert.equal(await getApiKeyStorageScope(), 'built-in');
   assert.equal(await getGlobalTranslationEnabled(), false);
@@ -271,17 +253,17 @@ async function main() {
   };
   const allAvailableResult = await validateBuiltInApiConnection(builtInApiKey, builtInEndpoint);
   assert.equal(allAvailableResult.ok, true);
-  assert.equal(allAvailableResult.message, '3 个内置 LLM 模型可用');
-  assert.equal(allAvailableResult.availableModels, 3);
-  assert.deepEqual(requestedModelsA.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite', 'instant']);
+  assert.equal(allAvailableResult.message, '2 个内置 LLM 模型可用');
+  assert.equal(allAvailableResult.availableModels, 2);
+  assert.deepEqual(requestedModelsA.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite']);
 
   const requestedModelsB = [];
   context.fetch = async (_url, options) => {
     const payload = JSON.parse(String(options.body || '{}'));
     requestedModelsB.push(payload.model);
     return {
-      ok: payload.model === 'instant',
-      status: payload.model === 'instant' ? 200 : 503,
+      ok: payload.model === 'LongCat-Flash-Chat',
+      status: payload.model === 'LongCat-Flash-Chat' ? 200 : 503,
       async text() {
         return 'temporary unavailable';
       }
@@ -291,24 +273,7 @@ async function main() {
   assert.equal(oneAvailableResult.ok, true);
   assert.equal(oneAvailableResult.message, '1 个内置 LLM 模型可用');
   assert.equal(oneAvailableResult.availableModels, 1);
-  assert.deepEqual(requestedModelsB.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite', 'instant']);
-
-  const requestedModelsInstantOnly = [];
-  context.fetch = async (_url, options) => {
-    const payload = JSON.parse(String(options.body || '{}'));
-    requestedModelsInstantOnly.push(payload.model);
-    return {
-      ok: true,
-      status: 200,
-      async text() {
-        return '';
-      }
-    };
-  };
-  const instantOnlyHealthCheck = await validateBuiltInApiConnection('', builtInEndpoint);
-  assert.equal(instantOnlyHealthCheck.ok, true);
-  assert.equal(instantOnlyHealthCheck.message, '1 个内置 LLM 模型可用');
-  assert.deepEqual(requestedModelsInstantOnly, ['instant']);
+  assert.deepEqual(requestedModelsB.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite']);
 
   const requestedModelsC = [];
   context.fetch = async (_url, options) => {
@@ -326,55 +291,7 @@ async function main() {
   assert.equal(noneAvailableResult.ok, false);
   assert.equal(noneAvailableResult.error, '内置 LLM 模型全部不可用');
   assert.equal(noneAvailableResult.availableModels, 0);
-  assert.deepEqual(requestedModelsC.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite', 'instant']);
-
-  const fallbackContext = loadBackgroundForTest();
-  const fallbackRequestedModels = [];
-  fallbackContext.fetch = async (url, options) => {
-    const payload = JSON.parse(String(options.body || '{}'));
-    fallbackRequestedModels.push(payload.model);
-
-    if (String(url).includes('api.longcat.chat')) {
-      return {
-        ok: false,
-        status: 503,
-        async text() {
-          return 'forced longcat failure';
-        },
-        headers: { get() { return null; } }
-      };
-    }
-
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return {
-          choices: [
-            {
-              message: {
-                content: JSON.stringify([
-                  { id: 0, translation: '后备即时翻译 A' },
-                  { id: 1, translation: '后备即时翻译 B' }
-                ])
-              }
-            }
-          ]
-        };
-      },
-      async text() {
-        return '';
-      },
-      headers: { get() { return null; } }
-    };
-  };
-  const fallbackBatch = await fallbackContext.__testExports.handleTranslateBatch({
-    texts: ['Fallback path alpha unique', 'Fallback path beta unique'],
-    languageHint: 'en'
-  });
-  assert.equal(fallbackBatch.ok, true);
-  assert.deepEqual(toPlain(fallbackBatch.translations), ['后备即时翻译 A', '后备即时翻译 B']);
-  assert.deepEqual(fallbackRequestedModels, ['LongCat-Flash-Lite', 'instant']);
+  assert.deepEqual(requestedModelsC.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite']);
 
   await context.chrome.storage.sync.set({
     globalTranslationEnabled: true
