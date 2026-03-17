@@ -94,6 +94,14 @@ h1 {
   cursor: pointer;
 }
 
+.compact-field {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #d5e4f8;
+}
+
 .toggle-copy {
   display: flex;
   flex-direction: column;
@@ -210,6 +218,8 @@ h1 {
   font-size: 13px;
   color: #203550;
   background: #fdfefe;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .field-input:focus {

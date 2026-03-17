@@ -1,5 +1,7 @@
 const statusEl = document.getElementById("status");
 const globalToggleEl = document.getElementById("globalToggle");
+const toggleDescEl = document.getElementById("toggleDesc");
+const targetLanguageEl = document.getElementById("targetLanguage");
 const testApiBtn = document.getElementById("testApiBtn");
 const apiEndpointEl = document.getElementById("apiEndpoint");
 const apiKeyEl = document.getElementById("apiKey");
@@ -12,6 +14,21 @@ const toggleApiKeyBtn = document.getElementById("toggleApiKeyBtn");
 initPopup().catch((error) => {
   setStatus(`初始化失败：${error.message}`);
 });
+
+function getTargetLanguageLabel(code) {
+  return code === "en" ? "英语" : "简体中文";
+}
+
+function buildToggleDescription(code) {
+  if (code === "en") {
+    return "英语页面会自动跳过，其他语言页面会按需翻译为英语";
+  }
+  return "简体中文页面会自动跳过，其他语言页面会按需翻译为简体中文";
+}
+
+function refreshToggleDescription() {
+  toggleDescEl.textContent = buildToggleDescription(targetLanguageEl.value);
+}
 
 globalToggleEl.addEventListener("change", async () => {
   const enabled = globalToggleEl.checked;
@@ -32,10 +49,32 @@ globalToggleEl.addEventListener("change", async () => {
 
   setStatus(
     enabled
-      ? "已开启自动翻译：默认会把非简体中文页面翻译成简体中文"
+      ? `已开启自动翻译：默认会把非${getTargetLanguageLabel(targetLanguageEl.value)}页面翻译为${getTargetLanguageLabel(targetLanguageEl.value)}`
       : "已关闭自动翻译：网页将保持原文",
     true
   );
+});
+
+targetLanguageEl.addEventListener("change", async () => {
+  lockActions(true);
+  refreshToggleDescription();
+  setStatus("正在保存目标语言...");
+
+  const result = await sendRuntimeMessage({
+    type: "setTargetLanguage",
+    targetLanguageCode: targetLanguageEl.value
+  });
+
+  lockActions(false);
+
+  if (!result?.ok) {
+    setStatus(result?.error || "保存目标语言失败");
+    return;
+  }
+
+  targetLanguageEl.value = result.targetLanguageCode || targetLanguageEl.value;
+  refreshToggleDescription();
+  setStatus(`目标语言已切换为${result.targetLanguageLabel || getTargetLanguageLabel(targetLanguageEl.value)}`, true);
 });
 
 testApiBtn.addEventListener("click", async () => {
@@ -129,6 +168,8 @@ async function initPopup() {
   }
 
   globalToggleEl.checked = Boolean(statusResult.enabled);
+  targetLanguageEl.value = statusResult.targetLanguageCode || "zh-Hans";
+  refreshToggleDescription();
   writeApiConfigToForm(apiConfigResult.config || {});
   lockActions(false);
 }
@@ -155,6 +196,7 @@ function lockActions(locked) {
   saveApiBtn.disabled = locked;
   resetApiBtn.disabled = locked;
   toggleApiKeyBtn.disabled = locked;
+  targetLanguageEl.disabled = locked;
   apiEndpointEl.disabled = locked;
   apiKeyEl.disabled = locked;
   primaryModelEl.disabled = locked;

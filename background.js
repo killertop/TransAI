@@ -37,9 +37,27 @@ const API_CONFIG_MODE_CUSTOM = "custom";
 const REMOVED_SETTINGS_MESSAGE = "当前版本已移除设置页，API 地址与 Token 已固定在扩展内部。";
 const GLOBAL_SWITCH_ONLY_MESSAGE = "当前版本仅支持全局总开关，不再提供按网站单独配置。";
 const GLOBAL_TRANSLATION_ENABLED_KEY = "globalTranslationEnabled";
+const TARGET_LANGUAGE_STORAGE_KEY = "targetTranslationLanguage";
 const PERFORMANCE_SETTINGS_KEY = "translationPerformanceSettings";
-const TARGET_LANGUAGE_NAME = "中文";
-const TARGET_LANGUAGE_CODE = "zh-Hans";
+const DEFAULT_TARGET_LANGUAGE_CODE = "zh-Hans";
+const TARGET_LANGUAGE_CONFIGS = Object.freeze({
+  "zh-Hans": Object.freeze({
+    code: "zh-Hans",
+    label: "简体中文",
+    systemName: "简体中文",
+    targetHint: "只允许输出自然简体中文，不要输出英文拼写、拼音或中英混排。",
+    preserveHint: "若输入已经是自然简体中文，可保持原意并只做必要的轻微润色。",
+    finalHint: "5) 译文必须是自然简体中文，不要残留大段外文。"
+  }),
+  en: Object.freeze({
+    code: "en",
+    label: "英语",
+    systemName: "英语",
+    targetHint: "只允许输出自然英文，不要输出中文或中英混排。",
+    preserveHint: "若输入已经是自然英文，可保持原意并只做必要的轻微润色。",
+    finalHint: "5) 译文必须是自然英文，不要输出非英文原文。"
+  })
+});
 
 const SITE_RULES_KEY = "alwaysTranslateHosts";
 const SITE_RULES_META_KEY = "alwaysTranslateHostsMeta";
@@ -138,6 +156,8 @@ let runtimePerformanceSettings = sanitizePerformanceSettings();
 let performanceSettingsLoadPromise = null;
 let runtimeApiConfig = sanitizeRuntimeApiConfig();
 let apiConfigLoadPromise = null;
+let runtimeTargetLanguageCode = DEFAULT_TARGET_LANGUAGE_CODE;
+let targetLanguageLoadPromise = null;
 
 function sanitizePerformanceSettings(_rawSettings = null) {
   return {
@@ -168,6 +188,21 @@ function applyRuntimeApiConfig(nextConfig = null) {
   return runtimeApiConfig;
 }
 
+function sanitizeTargetLanguageCode(rawValue) {
+  const value = String(rawValue ?? "").trim();
+  return TARGET_LANGUAGE_CONFIGS[value] ? value : DEFAULT_TARGET_LANGUAGE_CODE;
+}
+
+function getTargetLanguageConfig(code = runtimeTargetLanguageCode) {
+  return TARGET_LANGUAGE_CONFIGS[sanitizeTargetLanguageCode(code)];
+}
+
+function applyRuntimeTargetLanguage(code = DEFAULT_TARGET_LANGUAGE_CODE) {
+  runtimeTargetLanguageCode = sanitizeTargetLanguageCode(code);
+  targetLanguageLoadPromise = Promise.resolve(runtimeTargetLanguageCode);
+  return runtimeTargetLanguageCode;
+}
+
 function applyRuntimePerformanceSettings(nextSettings) {
   runtimePerformanceSettings = sanitizePerformanceSettings(nextSettings);
   performanceSettingsLoadPromise = Promise.resolve(runtimePerformanceSettings);
@@ -192,6 +227,11 @@ async function loadApiConfigFromStorage() {
   return applyRuntimeApiConfig(data?.[API_CONFIG_STORAGE_KEY]);
 }
 
+async function loadTargetLanguageFromStorage() {
+  const data = await chrome.storage.sync.get([TARGET_LANGUAGE_STORAGE_KEY]);
+  return applyRuntimeTargetLanguage(data?.[TARGET_LANGUAGE_STORAGE_KEY]);
+}
+
 async function ensurePerformanceSettingsLoaded() {
   if (!performanceSettingsLoadPromise) {
     performanceSettingsLoadPromise = loadPerformanceSettingsFromStorage().catch((error) => {
@@ -210,6 +250,16 @@ async function ensureApiConfigLoaded() {
     });
   }
   return apiConfigLoadPromise;
+}
+
+async function ensureTargetLanguageLoaded() {
+  if (!targetLanguageLoadPromise) {
+    targetLanguageLoadPromise = loadTargetLanguageFromStorage().catch((error) => {
+      targetLanguageLoadPromise = null;
+      throw error;
+    });
+  }
+  return targetLanguageLoadPromise;
 }
 const LANGUAGE_PROFILES = {
   en: {
@@ -367,6 +417,7 @@ async function runStartupMaintenance() {
   await cleanupLegacyApiConfig();
   await cleanupLegacySiteRules();
   await ensureApiConfigLoaded();
+  await ensureTargetLanguageLoaded();
   await ensurePerformanceSettingsLoaded();
   await cleanupLegacyDynamicScripts();
   const globalEnabled = await getGlobalTranslationEnabled();
@@ -432,6 +483,13 @@ if (chrome.runtime?.onMessage?.addListener) {
 
     if (message.type === "setGlobalTranslationEnabled") {
       handleSetGlobalTranslationEnabled(message)
+        .then(sendResponse)
+        .catch((error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+
+    if (message.type === "setTargetLanguage") {
+      handleSetTargetLanguage(message)
         .then(sendResponse)
         .catch((error) => sendResponse({ ok: false, error: error.message }));
       return true;
@@ -567,13 +625,18 @@ async function handleGetSiteSetting(message) {
 }
 
 async function handleGetGlobalTranslationStatus() {
+  const targetLanguageCode = await ensureTargetLanguageLoaded();
+  const targetLanguage = getTargetLanguageConfig(targetLanguageCode);
   return {
     ok: true,
-    enabled: await getGlobalTranslationEnabled()
+    enabled: await getGlobalTranslationEnabled(),
+    targetLanguageCode,
+    targetLanguageLabel: targetLanguage.label
   };
 }
 
 async function handleSetGlobalTranslationEnabled(message) {
+  await ensureTargetLanguageLoaded();
   const enabled = Boolean(message?.enabled);
   await chrome.storage.sync.set({
     [GLOBAL_TRANSLATION_ENABLED_KEY]: enabled
@@ -585,12 +648,31 @@ async function handleSetGlobalTranslationEnabled(message) {
   return {
     ok: true,
     enabled,
+    targetLanguageCode: runtimeTargetLanguageCode,
+    targetLanguageLabel: getTargetLanguageConfig(runtimeTargetLanguageCode).label,
+    syncedTabs: syncResults.length,
+    updatedTabs: syncResults.filter((item) => item?.updated).length
+  };
+}
+
+async function handleSetTargetLanguage(message) {
+  const targetLanguageCode = applyRuntimeTargetLanguage(message?.targetLanguageCode);
+  await chrome.storage.sync.set({
+    [TARGET_LANGUAGE_STORAGE_KEY]: targetLanguageCode
+  });
+  const enabled = await getGlobalTranslationEnabled();
+  const syncResults = await syncGlobalTranslationToTabs(enabled);
+  return {
+    ok: true,
+    targetLanguageCode,
+    targetLanguageLabel: getTargetLanguageConfig(targetLanguageCode).label,
     syncedTabs: syncResults.length,
     updatedTabs: syncResults.filter((item) => item?.updated).length
   };
 }
 
 async function handleTestApiConnection() {
+  await ensureTargetLanguageLoaded();
   const apiKey = await getApiKey();
   const apiEndpoint = await getApiEndpointOrDefault();
   const testResult = await validateBuiltInApiConnection(apiKey, apiEndpoint);
@@ -904,6 +986,7 @@ async function handleResetRuntimeApiConfig() {
 }
 
 async function handleTranslateBatch(message, sender) {
+  await ensureTargetLanguageLoaded();
   const entries = normalizeTranslationEntries(message);
   if (!entries.length) {
     return { ok: true, translations: [] };
@@ -1207,7 +1290,7 @@ function buildTranslationMemoryKey(entry, languageKey) {
     return "";
   }
 
-  const targetPrefix = `to:${TARGET_LANGUAGE_CODE}::`;
+  const targetPrefix = `to:${runtimeTargetLanguageCode}::`;
 
   if (!isContextEnhancedEntry(entry)) {
     return `${targetPrefix}${languageKey}::${normalizedText}`;
@@ -1224,7 +1307,7 @@ function buildDedupeKey(entry, languageKey) {
     return base;
   }
   const normalizedText = normalizeBatchText(entry?.text || "");
-  return `to:${TARGET_LANGUAGE_CODE}::${languageKey}::${normalizedText}`;
+  return `to:${runtimeTargetLanguageCode}::${languageKey}::${normalizedText}`;
 }
 
 function isContextEnhancedEntry(entry) {
@@ -2176,6 +2259,7 @@ async function ensureTabScriptReadyByUrl(tabId, rawUrl) {
   }
 
   const enabled = await getGlobalTranslationEnabled();
+  const targetLanguageCode = await ensureTargetLanguageLoaded();
   if (!enabled) {
     return;
   }
@@ -2188,7 +2272,8 @@ async function ensureTabScriptReadyByUrl(tabId, rawUrl) {
 
   await sendTabMessageSafe(numericTabId, {
     type: "siteSettingChanged",
-    enabled: true
+    enabled: true,
+    targetLanguageCode
   });
 
   const paused = Boolean(pausedTabs.get(numericTabId));
@@ -2205,6 +2290,7 @@ async function ensureTabScriptReadyByUrl(tabId, rawUrl) {
 }
 
 async function syncGlobalTranslationToTabs(enabled) {
+  const targetLanguageCode = await ensureTargetLanguageLoaded();
   const tabs = await querySupportedTabs();
   if (!tabs.length) {
     return [];
@@ -2241,7 +2327,8 @@ async function syncGlobalTranslationToTabs(enabled) {
           }
           await sendTabMessageSafe(tabId, {
             type: "siteSettingChanged",
-            enabled: true
+            enabled: true,
+            targetLanguageCode
           });
           await sendTabMessageSafe(tabId, {
             type: "tabPauseChanged",
@@ -2262,7 +2349,8 @@ async function syncGlobalTranslationToTabs(enabled) {
         pausedTabs.delete(tabId);
         await sendTabMessageSafe(tabId, {
           type: "siteSettingChanged",
-          enabled: false
+          enabled: false,
+          targetLanguageCode
         });
         const restoreResult = await sendTabMessageSafe(tabId, {
           type: "restoreOriginalPage"
@@ -2293,6 +2381,7 @@ async function syncGlobalTranslationToTabs(enabled) {
 }
 
 async function syncSiteSettingToHostTabs(hostname, enabled) {
+  const targetLanguageCode = await ensureTargetLanguageLoaded();
   const normalizedHost = normalizeHostname(hostname);
   if (!normalizedHost) {
     return [];
@@ -2335,7 +2424,8 @@ async function syncSiteSettingToHostTabs(hostname, enabled) {
           }
           await sendTabMessageSafe(tabId, {
             type: "siteSettingChanged",
-            enabled: true
+            enabled: true,
+            targetLanguageCode
           });
           await sendTabMessageSafe(tabId, {
             type: "tabPauseChanged",
@@ -2356,7 +2446,8 @@ async function syncSiteSettingToHostTabs(hostname, enabled) {
         pausedTabs.delete(tabId);
         await sendTabMessageSafe(tabId, {
           type: "siteSettingChanged",
-          enabled: false
+          enabled: false,
+          targetLanguageCode
         });
         const restoreResult = await sendTabMessageSafe(tabId, {
           type: "restoreOriginalPage"
@@ -2831,23 +2922,25 @@ async function recoverMissingTranslations({
 }
 
 function buildSystemPrompt(languageProfile) {
+  const targetLanguage = getTargetLanguageConfig();
   return [
     `你是一个${languageProfile.role}。`,
     `当前源语言优先按「${languageProfile.name}」处理。`,
-    `任务：将用户提供的文本准确翻译为自然、流畅的${TARGET_LANGUAGE_NAME}（${TARGET_LANGUAGE_CODE}）。`,
-    `目标语言强制要求：只允许输出${TARGET_LANGUAGE_NAME}，不要输出英文拼写、拼音或中英混排。`,
-    "若输入已经是自然中文，可保持原意并只做必要的轻微润色。",
+    `任务：将用户提供的文本准确翻译为自然、流畅的${targetLanguage.systemName}（${targetLanguage.code}）。`,
+    `目标语言强制要求：${targetLanguage.targetHint}`,
+    targetLanguage.preserveHint,
     `翻译要点：${languageProfile.guidance}`,
     "硬性要求：",
     "1) 只输出 JSON 数组，不要输出解释、标题、Markdown 代码块。",
     "2) 输出数组长度必须与输入数组完全一致，并严格一一对应。",
     "3) 保留原文中的专有名词、缩写、数字、单位和链接格式。",
     "4) 保持原有语气，不要扩写或删减事实信息。",
-    "5) 译文必须是自然中文，不要残留大段外文。"
+    targetLanguage.finalHint
   ].join("\n");
 }
 
 function buildUserPrompt(entries, languageProfile) {
+  const targetLanguage = getTargetLanguageConfig();
   const indexedTexts = entries.map((entry, index) => {
     const item = {
       id: index,
@@ -2865,8 +2958,8 @@ function buildUserPrompt(entries, languageProfile) {
   });
 
   return [
-    `请将下面 JSON 数组中的每个字符串从${languageProfile.name}翻译为${TARGET_LANGUAGE_NAME}（${TARGET_LANGUAGE_CODE}）。`,
-    `若个别条目语言与主语言不同，也需自动识别后翻译为${TARGET_LANGUAGE_NAME}。`,
+    `请将下面 JSON 数组中的每个字符串从${languageProfile.name}翻译为${targetLanguage.systemName}（${targetLanguage.code}）。`,
+    `若个别条目语言与主语言不同，也需自动识别后翻译为${targetLanguage.systemName}。`,
     "要求：",
     "1) 输出必须是 JSON 数组。",
     "2) 输出数组元素必须是对象，格式为 {\"id\":数字, \"translation\":\"译文\"}。",
@@ -2874,7 +2967,7 @@ function buildUserPrompt(entries, languageProfile) {
     "4) prev/next 仅作为语境参考，translation 只翻译 text 字段本身，不要把 prev/next 拼进译文。",
     "5) 不要输出解释、前后缀、Markdown 代码块。",
     "6) 保留原本语气和标点符号。",
-    "7) 每条译文必须是自然中文，不要输出英文原文。",
+    `7) 每条译文必须是自然${targetLanguage.systemName}。`,
     "输入：",
     JSON.stringify(indexedTexts)
   ].join("\n");
@@ -3369,6 +3462,20 @@ function isAcceptableSameChineseLikeText(text) {
   return isLikelyTargetChineseText(text);
 }
 
+function containsNonEnglishScript(text) {
+  return /[\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff\u4e00-\u9fff]/i.test(
+    String(text || "")
+  );
+}
+
+function isLikelyTargetEnglishText(text) {
+  const normalized = normalizeComparisonText(text);
+  if (!normalized || containsChineseChar(normalized) || containsNonEnglishScript(normalized)) {
+    return false;
+  }
+  return isLikelyEnglishPhrase(normalized) || hasLatinLetters(normalized);
+}
+
 function isAcceptableTranslatedText(sourceText, translatedText) {
   const normalizedSource = normalizeComparisonText(sourceText);
   const normalizedTranslated = normalizeComparisonText(translatedText);
@@ -3381,12 +3488,26 @@ function isAcceptableTranslatedText(sourceText, translatedText) {
     return true;
   }
 
-  const sourceLooksChinese = isLikelyTargetChineseText(normalizedSource);
+  const targetLanguageCode = runtimeTargetLanguageCode;
+  const sourceLooksTarget =
+    targetLanguageCode === "en"
+      ? isLikelyTargetEnglishText(normalizedSource)
+      : isLikelyTargetChineseText(normalizedSource);
   if (normalizedSource === normalizedTranslated) {
-    return sourceLooksChinese || isAcceptableSameChineseLikeText(normalizedSource);
+    if (targetLanguageCode === "en") {
+      return sourceLooksTarget;
+    }
+    return sourceLooksTarget || isAcceptableSameChineseLikeText(normalizedSource);
   }
 
-  if (!containsChineseChar(normalizedTranslated) && !sourceLooksChinese) {
+  if (targetLanguageCode === "en") {
+    if (containsChineseChar(normalizedTranslated) || containsNonEnglishScript(normalizedTranslated)) {
+      return false;
+    }
+    return hasLatinLetters(normalizedTranslated);
+  }
+
+  if (!containsChineseChar(normalizedTranslated) && !sourceLooksTarget) {
     return false;
   }
 
