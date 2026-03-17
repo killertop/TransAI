@@ -19,13 +19,10 @@ const OBFUSCATED_RUNTIME_API_CONFIG = Object.freeze({
 const API_ENDPOINT = decodeObfuscatedText(OBFUSCATED_RUNTIME_API_CONFIG.endpoint);
 const EMBEDDED_API_KEY = decodeObfuscatedText(OBFUSCATED_RUNTIME_API_CONFIG.token);
 const PRIMARY_MODEL_NAME = "LongCat-Flash-Lite";
-const BACKUP_MODEL_NAME = "LongCat-Flash-Chat";
-const DEFAULT_MODEL_CANDIDATES = Object.freeze([PRIMARY_MODEL_NAME, BACKUP_MODEL_NAME]);
 const DEFAULT_RUNTIME_API_CONFIG = Object.freeze({
   endpoint: API_ENDPOINT,
   apiKey: EMBEDDED_API_KEY,
-  primaryModel: PRIMARY_MODEL_NAME,
-  backupModel: BACKUP_MODEL_NAME
+  primaryModel: PRIMARY_MODEL_NAME
 });
 const LEGACY_API_KEY_STORAGE_KEY = "longcatApiKey";
 const LEGACY_API_ENDPOINT_STORAGE_KEY = "openaiApiEndpoint";
@@ -157,8 +154,7 @@ function sanitizeRuntimeApiConfig(rawConfig = null) {
       normalizeApiEndpoint(raw.endpoint) || DEFAULT_RUNTIME_API_CONFIG.endpoint,
     apiKey:
       sanitizeApiKey(raw.apiKey) || DEFAULT_RUNTIME_API_CONFIG.apiKey,
-    primaryModel: sanitizeModelName(raw.primaryModel, DEFAULT_RUNTIME_API_CONFIG.primaryModel),
-    backupModel: sanitizeModelName(raw.backupModel, DEFAULT_RUNTIME_API_CONFIG.backupModel)
+    primaryModel: sanitizeModelName(raw.primaryModel, DEFAULT_RUNTIME_API_CONFIG.primaryModel)
   };
 }
 
@@ -876,14 +872,12 @@ async function handleGetRuntimeApiConfig() {
     config: {
       endpoint: config.endpoint,
       apiKey: config.apiKey,
-      primaryModel: config.primaryModel,
-      backupModel: config.backupModel
+      primaryModel: config.primaryModel
     },
     defaults: {
       endpoint: DEFAULT_RUNTIME_API_CONFIG.endpoint,
       apiKey: DEFAULT_RUNTIME_API_CONFIG.apiKey,
-      primaryModel: DEFAULT_RUNTIME_API_CONFIG.primaryModel,
-      backupModel: DEFAULT_RUNTIME_API_CONFIG.backupModel
+      primaryModel: DEFAULT_RUNTIME_API_CONFIG.primaryModel
     }
   };
 }
@@ -1398,8 +1392,7 @@ async function getApiKeyStorageScope() {
   return (
     config.endpoint === DEFAULT_RUNTIME_API_CONFIG.endpoint &&
     config.apiKey === DEFAULT_RUNTIME_API_CONFIG.apiKey &&
-    config.primaryModel === DEFAULT_RUNTIME_API_CONFIG.primaryModel &&
-    config.backupModel === DEFAULT_RUNTIME_API_CONFIG.backupModel
+    config.primaryModel === DEFAULT_RUNTIME_API_CONFIG.primaryModel
   )
     ? API_CONFIG_MODE_BUILT_IN
     : API_CONFIG_MODE_CUSTOM;
@@ -1429,7 +1422,7 @@ async function getGlobalTranslationEnabled() {
 }
 
 function getModelCandidates() {
-  return [runtimeApiConfig.primaryModel, runtimeApiConfig.backupModel].filter(Boolean);
+  return [runtimeApiConfig.primaryModel].filter(Boolean);
 }
 
 function getBuiltInTranslationCandidates(apiKey, apiEndpoint = API_ENDPOINT) {
@@ -1438,9 +1431,7 @@ function getBuiltInTranslationCandidates(apiKey, apiEndpoint = API_ENDPOINT) {
   if (!primaryKey || !primaryEndpoint) {
     return [];
   }
-  const modelCandidates = Array.from(
-    new Set([runtimeApiConfig.primaryModel, runtimeApiConfig.backupModel].filter(Boolean))
-  );
+  const modelCandidates = Array.from(new Set([runtimeApiConfig.primaryModel].filter(Boolean)));
   return modelCandidates.map((modelName) => ({
     providerId: "longcat",
     providerKey: "longcat",
@@ -2619,7 +2610,7 @@ function createCandidateBatchSplitError(candidate, sourceEntries) {
   const itemCount = Array.isArray(sourceEntries) ? sourceEntries.length : 0;
   const totalChars = countEntryChars(sourceEntries);
   const error = new Error(
-    `${candidate?.modelName || "后备模型"} 需要拆分批次（items=${itemCount}, chars=${totalChars}）`
+    `${candidate?.modelName || "当前模型"} 需要拆分批次（items=${itemCount}, chars=${totalChars}）`
   );
   error.code = "batch_split_required";
   error.modelName = candidate?.modelName || "";

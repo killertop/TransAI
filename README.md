@@ -32,7 +32,7 @@ A Manifest V3 Chrome extension that translates non‑Simplified‑Chinese webpag
 
 1. 点击插件图标打开弹窗
 2. 在弹窗里确认当前域名，并按需开启该域名的自动翻译
-3. 如需修改接口，可在弹窗里直接编辑 API 地址、Token、常规模型、后备模型并保存
+3. 如需修改接口，可在弹窗里直接编辑 API 地址、Token 和模型名称并保存
 4. 如需检查当前配置是否可用，可点击“测试接口”
 5. 回到目标网页，插件会只在当前已开启的域名下，把非简体中文内容翻译为简体中文  
    The extension translates non-Simplified-Chinese content into Simplified Chinese only on domains you have enabled.

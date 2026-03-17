@@ -5,7 +5,6 @@ const testApiBtn = document.getElementById("testApiBtn");
 const apiEndpointEl = document.getElementById("apiEndpoint");
 const apiKeyEl = document.getElementById("apiKey");
 const primaryModelEl = document.getElementById("primaryModel");
-const backupModelEl = document.getElementById("backupModel");
 const saveApiBtn = document.getElementById("saveApiBtn");
 const resetApiBtn = document.getElementById("resetApiBtn");
 let currentSiteContext = {
@@ -133,8 +132,7 @@ function readApiConfigFromForm() {
   return {
     endpoint: apiEndpointEl.value,
     apiKey: apiKeyEl.value,
-    primaryModel: primaryModelEl.value,
-    backupModel: backupModelEl.value
+    primaryModel: primaryModelEl.value
   };
 }
 
@@ -142,7 +140,6 @@ function writeApiConfigToForm(config) {
   apiEndpointEl.value = String(config?.endpoint || "");
   apiKeyEl.value = String(config?.apiKey || "");
   primaryModelEl.value = String(config?.primaryModel || "");
-  backupModelEl.value = String(config?.backupModel || "");
 }
 
 function lockActions(locked) {
@@ -153,7 +150,6 @@ function lockActions(locked) {
   apiEndpointEl.disabled = locked;
   apiKeyEl.disabled = locked;
   primaryModelEl.disabled = locked;
-  backupModelEl.disabled = locked;
 }
 
 function setStatus(message, isOk = false) {

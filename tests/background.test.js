@@ -208,7 +208,7 @@ async function main() {
 
   assert.ok(builtInApiKey.length > 12);
   assert.match(builtInEndpoint, /^https:\/\/.+\/chat\/completions$/);
-  assert.deepEqual(modelCandidates, ['LongCat-Flash-Lite', 'LongCat-Flash-Chat']);
+  assert.deepEqual(modelCandidates, ['LongCat-Flash-Lite']);
   assert.ok(largeTokenBudget > smallTokenBudget);
   assert.ok(largeTokenBudget <= 12288);
   const liteStrategy = resolveModelRateLimitStrategy('LongCat-Flash-Lite');
@@ -226,9 +226,8 @@ async function main() {
   assert.ok(chatLimiterState.currentMinIntervalMs > chatStrategy.initialMinIntervalMs);
   assert.ok(chatLimiterState.cooldownUntil > Date.now());
   const builtInCandidates = toPlain(getBuiltInTranslationCandidates(builtInApiKey, builtInEndpoint));
-  const flashChatCandidate = builtInCandidates.find((item) => item.modelName === 'LongCat-Flash-Chat');
-  assert.equal(Boolean(flashChatCandidate), true);
-  assert.equal(flashChatCandidate.healthCheckTimeoutMs, 12000);
+  assert.deepEqual(builtInCandidates.map((item) => item.modelName), ['LongCat-Flash-Lite']);
+  assert.equal(builtInCandidates[0].healthCheckTimeoutMs, 8000);
   const longcatCircuitA = beginCircuitRequest('longcat');
   markCircuitRequestFailure(longcatCircuitA);
   const longcatCircuitB = beginCircuitRequest('longcat');
@@ -249,21 +248,19 @@ async function main() {
   assert.equal(runtimeApiConfigResult.config.endpoint, builtInEndpoint);
   assert.equal(runtimeApiConfigResult.config.apiKey, builtInApiKey);
   assert.equal(runtimeApiConfigResult.config.primaryModel, 'LongCat-Flash-Lite');
-  assert.equal(runtimeApiConfigResult.config.backupModel, 'LongCat-Flash-Chat');
 
   const customConfigResult = await handleSetRuntimeApiConfig({
     config: {
       endpoint: 'https://example.com/v1',
       apiKey: 'custom-token-123',
-      primaryModel: 'custom-primary',
-      backupModel: 'custom-backup'
+      primaryModel: 'custom-primary'
     }
   });
   assert.equal(customConfigResult.ok, true);
   assert.equal(await getApiEndpointOrDefault(), 'https://example.com/v1/chat/completions');
   assert.equal(await getApiKey(), 'custom-token-123');
   assert.equal(await getApiKeyStorageScope(), 'custom');
-  assert.deepEqual(toPlain(getModelCandidates()), ['custom-primary', 'custom-backup']);
+  assert.deepEqual(toPlain(getModelCandidates()), ['custom-primary']);
 
   const initialSiteSetting = await handleGetSiteSetting({
     hostname: 'docs.example.com'
@@ -305,7 +302,7 @@ async function main() {
   assert.equal(await getApiEndpointOrDefault(), builtInEndpoint);
   assert.equal(await getApiKey(), builtInApiKey);
   assert.equal(await getApiKeyStorageScope(), 'built-in');
-  assert.deepEqual(toPlain(getModelCandidates()), ['LongCat-Flash-Lite', 'LongCat-Flash-Chat']);
+  assert.deepEqual(toPlain(getModelCandidates()), ['LongCat-Flash-Lite']);
 
   const requestedModelsA = [];
   context.fetch = async (_url, options) => {
@@ -321,17 +318,17 @@ async function main() {
   };
   const allAvailableResult = await validateBuiltInApiConnection(builtInApiKey, builtInEndpoint);
   assert.equal(allAvailableResult.ok, true);
-  assert.equal(allAvailableResult.message, '2 个内置 LLM 模型可用');
-  assert.equal(allAvailableResult.availableModels, 2);
-  assert.deepEqual(requestedModelsA.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite']);
+  assert.equal(allAvailableResult.message, '1 个内置 LLM 模型可用');
+  assert.equal(allAvailableResult.availableModels, 1);
+  assert.deepEqual(requestedModelsA.sort(), ['LongCat-Flash-Lite']);
 
   const requestedModelsB = [];
   context.fetch = async (_url, options) => {
     const payload = JSON.parse(String(options.body || '{}'));
     requestedModelsB.push(payload.model);
     return {
-      ok: payload.model === 'LongCat-Flash-Chat',
-      status: payload.model === 'LongCat-Flash-Chat' ? 200 : 503,
+      ok: payload.model === 'LongCat-Flash-Lite',
+      status: payload.model === 'LongCat-Flash-Lite' ? 200 : 503,
       async text() {
         return 'temporary unavailable';
       }
@@ -341,7 +338,7 @@ async function main() {
   assert.equal(oneAvailableResult.ok, true);
   assert.equal(oneAvailableResult.message, '1 个内置 LLM 模型可用');
   assert.equal(oneAvailableResult.availableModels, 1);
-  assert.deepEqual(requestedModelsB.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite']);
+  assert.deepEqual(requestedModelsB.sort(), ['LongCat-Flash-Lite']);
 
   const requestedModelsC = [];
   context.fetch = async (_url, options) => {
@@ -359,7 +356,7 @@ async function main() {
   assert.equal(noneAvailableResult.ok, false);
   assert.equal(noneAvailableResult.error, '内置 LLM 模型全部不可用');
   assert.equal(noneAvailableResult.availableModels, 0);
-  assert.deepEqual(requestedModelsC.sort(), ['LongCat-Flash-Chat', 'LongCat-Flash-Lite']);
+  assert.deepEqual(requestedModelsC.sort(), ['LongCat-Flash-Lite']);
 
   await context.chrome.storage.sync.set({
     globalTranslationEnabled: true
