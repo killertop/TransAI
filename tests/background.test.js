@@ -70,7 +70,7 @@ function createChromeMock() {
 function loadBackgroundForTest() {
   const filePath = path.join(__dirname, '..', 'background.js');
   const source = fs.readFileSync(filePath, 'utf8');
-  const exposeSource = `${source}\n;globalThis.__testExports = {\n  parseModelTranslations,\n  recoverMissingTranslations,\n  handleTranslateBatch,\n  getApiKey,\n  getApiEndpointOrDefault,\n  getApiKeyStorageScope,\n  getGlobalTranslationEnabled,\n  getModelCandidates,\n  cleanupLegacyApiConfig,\n  validateBuiltInApiConnection,\n  estimateBestEffortMaxTokens,\n  resolveModelRateLimitStrategy,\n  getModelApiLimiterState,\n  noteModelApiLimiterOutcome,\n  getBuiltInTranslationCandidates,\n  isCandidateBatchSuitable,\n  getProviderCircuitBreakerState,\n  beginCircuitRequest,\n  markCircuitRequestFailure,\n  releaseCircuitRequest,\n  handleGetRuntimeApiConfig,\n  handleSetRuntimeApiConfig,\n  handleResetRuntimeApiConfig\n};`;
+  const exposeSource = `${source}\n;globalThis.__testExports = {\n  parseModelTranslations,\n  recoverMissingTranslations,\n  handleTranslateBatch,\n  getApiKey,\n  getApiEndpointOrDefault,\n  getApiKeyStorageScope,\n  getGlobalTranslationEnabled,\n  getModelCandidates,\n  cleanupLegacyApiConfig,\n  validateBuiltInApiConnection,\n  estimateBestEffortMaxTokens,\n  resolveModelRateLimitStrategy,\n  getModelApiLimiterState,\n  noteModelApiLimiterOutcome,\n  getBuiltInTranslationCandidates,\n  handleGetSiteSetting,\n  handleSetSiteSetting,\n  isCandidateBatchSuitable,\n  getProviderCircuitBreakerState,\n  beginCircuitRequest,\n  markCircuitRequestFailure,\n  releaseCircuitRequest,\n  handleGetRuntimeApiConfig,\n  handleSetRuntimeApiConfig,\n  handleResetRuntimeApiConfig\n};`;
 
   const context = {
     console,
@@ -111,6 +111,8 @@ async function main() {
     getModelApiLimiterState,
     noteModelApiLimiterOutcome,
     getBuiltInTranslationCandidates,
+    handleGetSiteSetting,
+    handleSetSiteSetting,
     isCandidateBatchSuitable,
     getProviderCircuitBreakerState,
     beginCircuitRequest,
@@ -262,6 +264,41 @@ async function main() {
   assert.equal(await getApiKey(), 'custom-token-123');
   assert.equal(await getApiKeyStorageScope(), 'custom');
   assert.deepEqual(toPlain(getModelCandidates()), ['custom-primary', 'custom-backup']);
+
+  const initialSiteSetting = await handleGetSiteSetting({
+    hostname: 'docs.example.com'
+  });
+  assert.equal(initialSiteSetting.ok, true);
+  assert.equal(initialSiteSetting.enabled, false);
+  assert.equal(initialSiteSetting.matchedHost, '');
+
+  const enabledSiteSetting = await handleSetSiteSetting({
+    hostname: 'example.com',
+    enabled: true
+  });
+  assert.equal(enabledSiteSetting.ok, true);
+  assert.equal(enabledSiteSetting.enabled, true);
+
+  const childSiteSetting = await handleGetSiteSetting({
+    hostname: 'docs.example.com'
+  });
+  assert.equal(childSiteSetting.ok, true);
+  assert.equal(childSiteSetting.enabled, true);
+  assert.equal(childSiteSetting.matchedHost, 'example.com');
+
+  const disabledSiteSetting = await handleSetSiteSetting({
+    hostname: 'example.com',
+    enabled: false
+  });
+  assert.equal(disabledSiteSetting.ok, true);
+  assert.equal(disabledSiteSetting.enabled, false);
+
+  const resetSiteSetting = await handleGetSiteSetting({
+    hostname: 'docs.example.com'
+  });
+  assert.equal(resetSiteSetting.ok, true);
+  assert.equal(resetSiteSetting.enabled, false);
+  assert.equal(resetSiteSetting.matchedHost, '');
 
   const resetConfigResult = await handleResetRuntimeApiConfig();
   assert.equal(resetConfigResult.ok, true);

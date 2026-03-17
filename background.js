@@ -34,8 +34,8 @@ const API_CONFIG_STORAGE_KEY = "runtimeApiConfig";
 const STORAGE_AREA_LOCAL = "local";
 const API_CONFIG_MODE_BUILT_IN = "built-in";
 const API_CONFIG_MODE_CUSTOM = "custom";
-const REMOVED_SETTINGS_MESSAGE = "当前版本已移除设置页，API 地址与 Token 已固定在扩展内部。";
-const GLOBAL_SWITCH_ONLY_MESSAGE = "当前版本仅支持全局总开关，不再提供按网站单独配置。";
+const REMOVED_SETTINGS_MESSAGE = "当前版本请直接在弹窗里修改 API 地址、Token 和模型名称。";
+const SITE_SWITCH_ONLY_MESSAGE = "当前版本改为按当前域名单独控制自动翻译。";
 const GLOBAL_TRANSLATION_ENABLED_KEY = "globalTranslationEnabled";
 const PERFORMANCE_SETTINGS_KEY = "translationPerformanceSettings";
 const TARGET_LANGUAGE_NAME = "中文";
@@ -365,12 +365,13 @@ if (chrome.runtime?.onStartup?.addListener) {
 async function runStartupMaintenance() {
   await ensureStorageAccessPolicy();
   await cleanupLegacyApiConfig();
-  await cleanupLegacySiteRules();
   await ensureApiConfigLoaded();
   await ensurePerformanceSettingsLoaded();
   await cleanupLegacyDynamicScripts();
-  const globalEnabled = await getGlobalTranslationEnabled();
-  await syncGlobalContentScriptRegistration(globalEnabled);
+  await chrome.storage.sync.remove([GLOBAL_TRANSLATION_ENABLED_KEY]);
+  await syncGlobalContentScriptRegistration(false);
+  const siteRules = await loadSiteRules();
+  await syncDynamicContentScriptRegistration(siteRules);
 }
 
 async function cleanupLegacyApiConfig() {
@@ -444,9 +445,18 @@ if (chrome.runtime?.onMessage?.addListener) {
       return true;
     }
 
-    if (message.type === "getSiteSetting" || message.type === "setSiteSetting") {
-      sendResponse({ ok: false, error: GLOBAL_SWITCH_ONLY_MESSAGE });
-      return false;
+    if (message.type === "getSiteSetting") {
+      handleGetSiteSetting(message)
+        .then(sendResponse)
+        .catch((error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+
+    if (message.type === "setSiteSetting") {
+      handleSetSiteSetting(message)
+        .then(sendResponse)
+        .catch((error) => sendResponse({ ok: false, error: error.message }));
+      return true;
     }
 
     if (message.type === "getApiKeyMask") {
@@ -569,24 +579,16 @@ async function handleGetSiteSetting(message) {
 async function handleGetGlobalTranslationStatus() {
   return {
     ok: true,
-    enabled: await getGlobalTranslationEnabled()
+    enabled: false,
+    message: SITE_SWITCH_ONLY_MESSAGE
   };
 }
 
 async function handleSetGlobalTranslationEnabled(message) {
-  const enabled = Boolean(message?.enabled);
-  await chrome.storage.sync.set({
-    [GLOBAL_TRANSLATION_ENABLED_KEY]: enabled
-  });
-  await cleanupLegacySiteRules();
-  await syncGlobalContentScriptRegistration(enabled);
-  const syncResults = await syncGlobalTranslationToTabs(enabled);
-
   return {
-    ok: true,
-    enabled,
-    syncedTabs: syncResults.length,
-    updatedTabs: syncResults.filter((item) => item?.updated).length
+    ok: false,
+    enabled: false,
+    error: SITE_SWITCH_ONLY_MESSAGE
   };
 }
 
@@ -790,10 +792,14 @@ async function handleSetTabPaused(message) {
   if (!paused) {
     const tab = await getTabSafe(tabId);
     const rawUrl = typeof message.tabUrl === "string" ? message.tabUrl : tab?.url || "";
-    const globalEnabled = await getGlobalTranslationEnabled();
-    if (globalEnabled) {
-      await syncGlobalContentScriptRegistration(true);
+    const matchedHost = await findMatchedHostForUrl(rawUrl);
+    if (matchedHost) {
+      await ensureHostScriptRegistered(matchedHost);
       await ensureContentScriptForTab(tabId, rawUrl);
+      await sendTabMessageSafe(tabId, {
+        type: "siteSettingChanged",
+        enabled: true
+      });
       await sendTabMessageSafe(tabId, {
         type: "tabPauseChanged",
         paused: false
@@ -1911,9 +1917,36 @@ async function cleanupLegacyDynamicScripts() {
 }
 
 async function syncDynamicContentScriptRegistration(rules) {
-  void rules;
-  const enabled = await getGlobalTranslationEnabled();
-  await syncGlobalContentScriptRegistration(enabled);
+  const normalizedRules = normalizeRulesObject(rules);
+  await syncGlobalContentScriptRegistration(false);
+
+  if (!chrome.scripting?.getRegisteredContentScripts) {
+    return;
+  }
+
+  const registeredScripts = await chrome.scripting.getRegisteredContentScripts();
+  const registeredManagedHosts = new Set(
+    dedupeStrings((registeredScripts || []).map((script) => parseHostFromScriptId(script?.id))).filter(Boolean)
+  );
+  const desiredHosts = new Set(Object.keys(normalizedRules));
+  const staleScriptIds = Array.from(registeredManagedHosts)
+    .filter((hostname) => !desiredHosts.has(hostname))
+    .map((hostname) => scriptIdForHost(hostname))
+    .filter(Boolean);
+
+  if (staleScriptIds.length && chrome.scripting?.unregisterContentScripts) {
+    try {
+      await chrome.scripting.unregisterContentScripts({
+        ids: staleScriptIds
+      });
+    } catch (_error) {
+      // 忽略脚本已不存在等场景。
+    }
+  }
+
+  for (const hostname of desiredHosts) {
+    await ensureHostScriptRegistered(hostname);
+  }
 }
 
 async function syncGlobalContentScriptRegistration(enabled) {
@@ -2047,13 +2080,6 @@ async function ensureContentScriptForTab(tabId, rawUrl = "") {
     return { ok: false, error: "当前页面不支持注入翻译脚本" };
   }
 
-  const enabled = await getGlobalTranslationEnabled();
-  if (!enabled) {
-    return { ok: false, error: "自动翻译总开关未开启" };
-  }
-
-  await syncGlobalContentScriptRegistration(true);
-
   return ensureContentScriptForTabOneShot(numericTabId, parsed.href);
 }
 
@@ -2175,12 +2201,12 @@ async function ensureTabScriptReadyByUrl(tabId, rawUrl) {
     return;
   }
 
-  const enabled = await getGlobalTranslationEnabled();
-  if (!enabled) {
+  const matchedHost = await findMatchedHostForUrl(parsed.href);
+  if (!matchedHost) {
     return;
   }
 
-  await syncGlobalContentScriptRegistration(true);
+  await ensureHostScriptRegistered(matchedHost);
   const ensureResult = await ensureContentScriptForTab(numericTabId, parsed.href);
   if (!ensureResult?.ok) {
     return;

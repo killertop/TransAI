@@ -1,5 +1,6 @@
 const statusEl = document.getElementById("status");
 const globalToggleEl = document.getElementById("globalToggle");
+const siteHostnameEl = document.getElementById("siteHostname");
 const testApiBtn = document.getElementById("testApiBtn");
 const apiEndpointEl = document.getElementById("apiEndpoint");
 const apiKeyEl = document.getElementById("apiKey");
@@ -8,17 +9,30 @@ const backupModelEl = document.getElementById("backupModel");
 const saveApiBtn = document.getElementById("saveApiBtn");
 const resetApiBtn = document.getElementById("resetApiBtn");
 const toggleApiKeyBtn = document.getElementById("toggleApiKeyBtn");
+let currentSiteContext = {
+  tabId: null,
+  hostname: "",
+  supported: false
+};
 
 initPopup().catch((error) => {
   setStatus(`初始化失败：${error.message}`);
 });
 
 globalToggleEl.addEventListener("change", async () => {
+  if (!currentSiteContext.supported || !currentSiteContext.hostname) {
+    globalToggleEl.checked = false;
+    setStatus("当前页面不支持按域名启用自动翻译");
+    return;
+  }
+
   const enabled = globalToggleEl.checked;
   lockActions(true);
 
   const result = await sendRuntimeMessage({
-    type: "setGlobalTranslationEnabled",
+    type: "setSiteSetting",
+    hostname: currentSiteContext.hostname,
+    tabId: currentSiteContext.tabId,
     enabled
   });
 
@@ -32,8 +46,8 @@ globalToggleEl.addEventListener("change", async () => {
 
   setStatus(
     enabled
-      ? "已开启自动翻译：默认会把非简体中文页面翻译成简体中文"
-      : "已关闭自动翻译：网页将保持原文",
+      ? `已为 ${currentSiteContext.hostname} 开启自动翻译`
+      : `已关闭 ${currentSiteContext.hostname} 的自动翻译`,
     true
   );
 });
@@ -102,23 +116,12 @@ toggleApiKeyBtn.addEventListener("click", () => {
 });
 
 async function initPopup() {
-  const [statusResult, apiConfigResult] = await Promise.all([
-    sendRuntimeMessage({
-      type: "getGlobalTranslationStatus"
-    }),
+  const [tabContext, apiConfigResult] = await Promise.all([
+    getCurrentTabContext(),
     sendRuntimeMessage({
       type: "getRuntimeApiConfig"
     })
   ]);
-
-  if (!statusResult?.ok) {
-    globalToggleEl.disabled = true;
-    testApiBtn.disabled = true;
-    saveApiBtn.disabled = true;
-    resetApiBtn.disabled = true;
-    setStatus(statusResult?.error || "读取开关状态失败");
-    return;
-  }
 
   if (!apiConfigResult?.ok) {
     testApiBtn.disabled = true;
@@ -128,8 +131,8 @@ async function initPopup() {
     return;
   }
 
-  globalToggleEl.checked = Boolean(statusResult.enabled);
   writeApiConfigToForm(apiConfigResult.config || {});
+  applyCurrentSiteContext(tabContext);
   lockActions(false);
 }
 
@@ -150,7 +153,7 @@ function writeApiConfigToForm(config) {
 }
 
 function lockActions(locked) {
-  globalToggleEl.disabled = locked;
+  globalToggleEl.disabled = locked || !currentSiteContext.supported;
   testApiBtn.disabled = locked;
   saveApiBtn.disabled = locked;
   resetApiBtn.disabled = locked;
@@ -176,4 +179,130 @@ function sendRuntimeMessage(message) {
       resolve(response);
     });
   });
+}
+
+async function getCurrentTabContext() {
+  const activeTab = await getActiveTab();
+  const parsedUrl = safeParseUrl(activeTab?.url || "");
+  const hostname = deriveSiteDomain(parsedUrl?.hostname || "");
+  const tabId = normalizeTabId(activeTab?.id);
+
+  if (!parsedUrl || !/^https?:$/.test(parsedUrl.protocol) || !hostname || tabId === null) {
+    return {
+      supported: false,
+      tabId,
+      hostname: "",
+      enabled: false
+    };
+  }
+
+  const siteResult = await sendRuntimeMessage({
+    type: "getSiteSetting",
+    hostname
+  });
+
+  if (!siteResult?.ok) {
+    throw new Error(siteResult?.error || "读取当前域名开关失败");
+  }
+
+  return {
+    supported: true,
+    tabId,
+    hostname,
+    enabled: Boolean(siteResult.enabled)
+  };
+}
+
+function applyCurrentSiteContext(context) {
+  currentSiteContext = {
+    tabId: normalizeTabId(context?.tabId),
+    hostname: String(context?.hostname || ""),
+    supported: Boolean(context?.supported)
+  };
+
+  if (!currentSiteContext.supported || !currentSiteContext.hostname) {
+    siteHostnameEl.textContent = "当前页面不支持按域名自动翻译";
+    globalToggleEl.checked = false;
+    globalToggleEl.disabled = true;
+    return;
+  }
+
+  siteHostnameEl.textContent = `当前域名：${currentSiteContext.hostname}`;
+  globalToggleEl.checked = Boolean(context?.enabled);
+}
+
+function getActiveTab() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (chrome.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+      resolve(Array.isArray(tabs) ? tabs[0] || null : null);
+    });
+  });
+}
+
+function safeParseUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") {
+    return null;
+  }
+
+  try {
+    return new URL(rawUrl);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function normalizeHostname(hostname) {
+  if (!hostname || typeof hostname !== "string") {
+    return "";
+  }
+  return hostname.trim().toLowerCase().replace(/^www\./, "");
+}
+
+function deriveSiteDomain(hostname) {
+  const normalized = normalizeHostname(hostname);
+  if (!normalized || normalized === "localhost" || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(normalized)) {
+    return normalized;
+  }
+
+  const segments = normalized.split(".").filter(Boolean);
+  if (segments.length <= 2) {
+    return normalized;
+  }
+
+  const knownCompoundSuffixes = new Set([
+    "ac.uk",
+    "co.jp",
+    "co.nz",
+    "co.uk",
+    "com.au",
+    "com.cn",
+    "com.hk",
+    "com.tw",
+    "edu.cn",
+    "gov.cn",
+    "gov.uk",
+    "net.au",
+    "net.cn",
+    "org.au",
+    "org.cn",
+    "org.uk"
+  ]);
+  const suffix = segments.slice(-2).join(".");
+  if (knownCompoundSuffixes.has(suffix) && segments.length >= 3) {
+    return segments.slice(-3).join(".");
+  }
+
+  return segments.slice(-2).join(".");
+}
+
+function normalizeTabId(value) {
+  const tabId = Number(value);
+  if (!Number.isInteger(tabId) || tabId < 0) {
+    return null;
+  }
+  return tabId;
 }

@@ -18,10 +18,11 @@
 
       <label class="toggle-row">
         <span class="toggle-copy">
-          <span class="toggle-title">启用自动翻译</span>
+          <span class="toggle-title">为当前域名启用自动翻译</span>
           <span class="toggle-desc">
-            简体中文页面会自动跳过，其他语言页面会按需翻译为简体中文
+            默认关闭；开启后仅对当前域名生效，非简体中文页面会按需翻译为简体中文
           </span>
+          <span id="siteHostname" class="site-hostname">正在读取当前域名...</span>
         </span>
         <input id="globalToggle" type="checkbox" disabled />
       </label>
