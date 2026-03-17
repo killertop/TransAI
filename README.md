@@ -35,6 +35,9 @@
 4. 如需检查当前配置是否可用，可点击“测试接口”
 5. 回到目标网页，插件会自动处理非简体中文页面
 
+Token 输入框支持显示 / 隐藏切换，便于复制和核对。  
+The token field supports show/hide toggle for easier copy and verification.
+
 ## 行为说明
 
 - 简体中文页面会自动跳过

@@ -7,6 +7,7 @@ const primaryModelEl = document.getElementById("primaryModel");
 const backupModelEl = document.getElementById("backupModel");
 const saveApiBtn = document.getElementById("saveApiBtn");
 const resetApiBtn = document.getElementById("resetApiBtn");
+const toggleApiKeyBtn = document.getElementById("toggleApiKeyBtn");
 
 initPopup().catch((error) => {
   setStatus(`初始化失败：${error.message}`);
@@ -94,6 +95,12 @@ resetApiBtn.addEventListener("click", async () => {
   setStatus("已恢复默认配置", true);
 });
 
+toggleApiKeyBtn.addEventListener("click", () => {
+  const showing = apiKeyEl.type === "text";
+  apiKeyEl.type = showing ? "password" : "text";
+  toggleApiKeyBtn.textContent = showing ? "显示" : "隐藏";
+});
+
 async function initPopup() {
   const [statusResult, apiConfigResult] = await Promise.all([
     sendRuntimeMessage({
@@ -147,6 +154,7 @@ function lockActions(locked) {
   testApiBtn.disabled = locked;
   saveApiBtn.disabled = locked;
   resetApiBtn.disabled = locked;
+  toggleApiKeyBtn.disabled = locked;
   apiEndpointEl.disabled = locked;
   apiKeyEl.disabled = locked;
   primaryModelEl.disabled = locked;
