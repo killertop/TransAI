@@ -1,0 +1,67 @@
+name: Build Chrome Extension
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 读取扩展信息
+        run: |
+          echo "EXT_NAME=$(node -p 'require(\"./manifest.json\").name')" >> "$GITHUB_ENV"
+          echo "EXT_VERSION=$(node -p 'require(\"./manifest.json\").version')" >> "$GITHUB_ENV"
+
+      - name: 运行语法检查
+        run: |
+          node --check background.js
+          node --check content.js
+          node --check popup.js
+
+      - name: 运行回归测试
+        run: |
+          node tests/background.test.js
+          node tests/content.test.js
+
+      - name: 准备扩展文件
+        run: |
+          mkdir -p "package/${EXT_NAME}" dist
+          cp manifest.json "package/${EXT_NAME}/"
+          cp background.js "package/${EXT_NAME}/"
+          cp content.js "package/${EXT_NAME}/"
+          cp popup.html "package/${EXT_NAME}/"
+          cp popup.css "package/${EXT_NAME}/"
+          cp popup.js "package/${EXT_NAME}/"
+          cp -R icons "package/${EXT_NAME}/"
+
+      - name: 生成 ZIP 包
+        run: |
+          cd package
+          zip -r "../dist/${EXT_NAME}-v${EXT_VERSION}.zip" "${EXT_NAME}"
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.EXT_NAME }}-v${{ env.EXT_VERSION }}
+          path: dist/${{ env.EXT_NAME }}-v${{ env.EXT_VERSION }}.zip
+          if-no-files-found: error
+
+      - name: 发布到 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ env.EXT_NAME }}-v${{ env.EXT_VERSION }}.zip

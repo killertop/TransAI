@@ -30,27 +30,41 @@ A Manifest V3 Chrome extension that translates non‑Simplified‑Chinese webpag
 
 ## GitHub 下载与加载
 
-- GitHub 可以托管源码，也可以配合 GitHub Actions / Releases 生成可下载的打包产物，但当前仓库默认只提供源码，不直接附带可安装的 `.crx` 文件。
+- 当前仓库已经接入 GitHub Actions 自动打包：每次推送到 `main` 都会自动生成扩展 ZIP，并作为 Actions Artifact 提供下载；如果推送的是 `v*` 标签，还会自动附加到 GitHub Release。
+- GitHub 不会自动生成可直接双击安装的 `.crx` 文件；当前仓库提供的是源码和自动生成的 ZIP 包。
 - 如果你是普通用户，最简单的方式是：
+  1. 打开仓库的 `Actions` 页面
+  2. 进入最新一次成功的 `Build Chrome Extension`
+  3. 在页面底部下载生成的 ZIP Artifact
+  4. 解压下载后的 ZIP 文件
+  5. 打开 Chrome，进入 `chrome://extensions/`
+  6. 打开右上角“开发者模式”
+  7. 点击“加载已解压的扩展程序”
+  8. 选择刚刚解压后的项目文件夹
+- 也可以直接下载源码自行加载：
   1. 打开仓库主页，点击 `Code` -> `Download ZIP`
   2. 解压下载后的 ZIP 文件
   3. 打开 Chrome，进入 `chrome://extensions/`
   4. 打开右上角“开发者模式”
   5. 点击“加载已解压的扩展程序”
   6. 选择刚刚解压后的项目文件夹
-- 如果后续仓库增加了 `Releases` 或自动打包流程，再可以直接下载对应压缩包使用。
+- 如果仓库发布了 `Releases`，也可以直接从 Release 页面下载对应版本的 ZIP 包。
 
 ## GitHub Packaging And Loading
 
-- GitHub can host the source code and can also publish packaged artifacts via GitHub Actions or Releases, but this repository currently ships source code only and does not provide a prebuilt `.crx` file by default.
+- This repository now uses GitHub Actions to build the extension automatically. Every push to `main` generates a ZIP package as an Actions artifact, and any pushed `v*` tag also publishes that ZIP to GitHub Releases.
+- GitHub does not automatically create a double-click installable `.crx` file here; this repository provides source code plus automatically generated ZIP packages.
 - For most users, the simplest way to install it is:
-  1. Open the repository page and click `Code` -> `Download ZIP`
-  2. Extract the downloaded ZIP file
-  3. Open Chrome and go to `chrome://extensions/`
-  4. Turn on `Developer mode`
-  5. Click `Load unpacked`
-  6. Select the extracted project folder
-- If this repository adds `Releases` or an automated packaging workflow later, you can download those packaged files directly instead.
+  1. Open the repository `Actions` page
+  2. Open the latest successful `Build Chrome Extension` run
+  3. Download the generated ZIP artifact at the bottom of the page
+  4. Extract the downloaded ZIP file
+  5. Open Chrome and go to `chrome://extensions/`
+  6. Turn on `Developer mode`
+  7. Click `Load unpacked`
+  8. Select the extracted project folder
+- You can also download the source code directly from `Code` -> `Download ZIP` and load it unpacked the same way.
+- If the repository has published `Releases`, you can also download the ZIP package directly from the Release page.
 
 ## 使用
 
@@ -87,6 +101,38 @@ The token field always stays masked for safer editing inside the popup.
 node tests/background.test.js
 node tests/content.test.js
 ```
+
+## 自动打包
+
+- 工作流文件：`.github/workflows/build-extension.yml`
+- 触发条件：
+  - 推送到 `main`
+  - 推送 `v*` 标签
+  - 手动点击 `Run workflow`
+- 打包内容：
+  - `manifest.json`
+  - `background.js`
+  - `content.js`
+  - `popup.html` / `popup.css` / `popup.js`
+  - `icons/`
+- 输出文件：
+  - `TransAI-v<version>.zip`
+
+## Automated Packaging
+
+- Workflow file: `.github/workflows/build-extension.yml`
+- Triggered by:
+  - pushes to `main`
+  - pushed `v*` tags
+  - manual `Run workflow`
+- Packaged files:
+  - `manifest.json`
+  - `background.js`
+  - `content.js`
+  - `popup.html` / `popup.css` / `popup.js`
+  - `icons/`
+- Output file:
+  - `TransAI-v<version>.zip`
 
 ## 打包前清理
 
