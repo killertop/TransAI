@@ -1,4 +1,4 @@
-# LLM 翻译 Chrome 插件
+# TransAI
 
 一个基于 Manifest V3 的 Chrome 翻译插件，用于把网页中的非简体中文内容按需翻译为简体中文。
 
